@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+
+{% block title %}Login - Password Manager{% endblock %}
+
+{% block content %}
+<div class="auth-container">
+    <div class="auth-card glass-card" data-animate="fade-up">
+        <h1>Password Manager</h1>
+        <h2>Login</h2>
+        
+        {% if error %}
+        <div class="error-message">{{ error }}</div>
+        {% endif %}
+        
+        <form method="POST" action="{{ url_for('login') }}" id="login-form">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input
+                    type="text"
+                    id="username"
+                    name="username"
+                    value="{{ username or '' }}"
+                    class="{% if totp_required %}input-readonly{% endif %}"
+                    {% if not totp_required %}autofocus{% else %}readonly{% endif %}
+                    required>
+            </div>
+            
+            {% if not totp_required %}
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            {% endif %}
+            
+            {% if totp_required %}
+            <div class="form-group totp-group">
+                <label for="totp_token">TOTP Code (Google Authenticator)</label>
+                <input type="text" id="totp_token" name="totp_token" 
+                       placeholder="Enter 6-digit code" 
+                       maxlength="6" 
+                       pattern="[0-9]{6}" 
+                       required 
+                       autofocus
+                       autocomplete="off">
+                <small>Open your Google Authenticator app and enter the 6-digit code</small>
+                <div class="totp-info-box">
+                    <p>🔐 Two-factor authentication is enabled for your account</p>
+                </div>
+            </div>
+            {% endif %}
+            
+            <button type="submit" class="btn btn-primary">
+                {% if totp_required %}Verify & Login{% else %}Login{% endif %}
+            </button>
+        </form>
+        
+        <p class="auth-link">
+            Don't have an account? <a href="{{ url_for('register') }}">Register here</a>
+        </p>
+        <p class="auth-link">
+            <a href="{{ url_for('reset_password') }}">Forgot password? Reset using recovery words</a>
+        </p>
+    </div>
+</div>
+
+{% if totp_required %}
+<script>
+// Auto-submit form when TOTP code is entered (6 digits)
+document.addEventListener('DOMContentLoaded', function() {
+    const totpInput = document.getElementById('totp_token');
+
+    if (totpInput) {
+        totpInput.addEventListener('input', function(e) {
+            // Remove non-numeric characters
+            this.value = this.value.replace(/[^0-9]/g, '');
+            
+            // Auto-submit when 6 digits are entered
+            if (this.value.length === 6) {
+                // Small delay for better UX
+                setTimeout(() => {
+                    document.getElementById('login-form').submit();
+                }, 300);
+            }
+        });
+    }
+});
+</script>
+{% endif %}
+
+{% block extra_css %}
+<style>
+.totp-group {
+    margin-top: 20px;
+    padding: 20px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 18px;
+    backdrop-filter: blur(18px);
+}
+
+.totp-info-box {
+    margin-top: 14px;
+    padding: 12px 14px;
+    background: rgba(111, 146, 255, 0.14);
+    border: 1px solid rgba(111, 146, 255, 0.28);
+    border-radius: 14px;
+}
+
+.totp-info-box p {
+    margin: 0;
+    color: rgba(220, 228, 255, 0.95);
+    font-weight: 600;
+}
+
+.totp-group label {
+    color: var(--text-secondary);
+}
+
+.totp-group small {
+    color: rgba(220, 228, 255, 0.7);
+}
+
+#totp_token {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+#totp_token::placeholder {
+    color: rgba(220, 228, 255, 0.45);
+}
+</style>
+{% endblock %}
+{% endblock %}
