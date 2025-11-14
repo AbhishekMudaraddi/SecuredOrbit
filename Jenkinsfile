@@ -254,9 +254,18 @@ pipeline {
         stage('Deploy to EC2') {
             when {
                 // Only deploy on main/master branch
+                // Also check if branch name is null (manual trigger) - allow deployment
                 anyOf {
                     branch 'main'
                     branch 'master'
+                    expression { 
+                        // Allow deployment if branch is null (manual trigger) or if we're on main/master
+                        return env.BRANCH_NAME == null || 
+                               env.BRANCH_NAME == 'main' || 
+                               env.BRANCH_NAME == 'master' ||
+                               env.GIT_BRANCH == 'origin/main' ||
+                               env.GIT_BRANCH == 'origin/master'
+                    }
                 }
             }
             steps {
