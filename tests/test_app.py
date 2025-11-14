@@ -14,11 +14,13 @@ def client():
         yield client
 
 
-def test_index_redirects_to_login(client):
-    """Test index redirects to login when not authenticated"""
+def test_index_shows_landing_page(client):
+    """Test index shows landing page when not authenticated"""
     response = client.get('/')
-    assert response.status_code == 302
-    assert '/login' in response.location
+    assert response.status_code == 200
+    # Check for landing page content (Login and Register buttons)
+    assert b'Login' in response.data or b'login' in response.data.lower()
+    assert b'Register' in response.data or b'register' in response.data.lower()
 
 
 def test_login_page_loads(client):
