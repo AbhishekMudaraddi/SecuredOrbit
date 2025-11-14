@@ -24,7 +24,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
+app.secret_key = os.getenv('SESSION_SECRET', os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production'))
 
 # AWS Configuration
 AWS_REGION = os.getenv('AWS_REGION', 'eu-north-1')
@@ -292,6 +292,12 @@ def index():
     if 'user_id' in session:
         return redirect(url_for('dashboard'))
     return redirect(url_for('login'))
+
+
+@app.route('/health')
+def health():
+    """Health check endpoint"""
+    return jsonify({'ok': True}), 200
 
 
 @app.route('/login', methods=['GET', 'POST'])

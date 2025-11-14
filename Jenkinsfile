@@ -1,0 +1,275 @@
+pipeline {
+    agent any
+    
+    environment {
+        // Application Configuration
+        APP_NAME = 'password-manager'
+        AWS_REGION = 'us-east-1'
+        
+        // ECR Configuration
+        // TODO: Replace <ACCOUNT_ID> with your AWS Account ID (e.g., 503561414328)
+        ACCOUNT_ID = '<ACCOUNT_ID>'
+        ECR_URL = "${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+        ECR_REPO = "${ECR_URL}/${APP_NAME}"
+        
+        // Image Tagging
+        // Use first 12 characters of git commit hash, or 'dev' if not available
+        IMAGE_TAG = "${env.GIT_COMMIT?.take(12) ?: 'dev'}"
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+                script {
+                    // Display git commit info
+                    sh 'git log -1 --oneline'
+                }
+            }
+        }
+        
+        stage('Setup Python') {
+            steps {
+                sh '''
+                    echo "Setting up Python virtual environment..."
+                    python3 -m venv .venv
+                    . .venv/bin/activate
+                    pip install --upgrade pip
+                    pip install -r requirements.txt
+                    echo "✓ Python environment ready"
+                '''
+            }
+        }
+        
+        stage('Lint & Tests') {
+            steps {
+                script {
+                    // Run flake8 if available (don't fail build)
+                    sh '''
+                        . .venv/bin/activate
+                        if command -v flake8 &> /dev/null || pip show flake8 &> /dev/null; then
+                            echo "Running flake8..."
+                            flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics || true
+                            flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics || true
+                        else
+                            echo "flake8 not installed, skipping linting"
+                        fi
+                    '''
+                    
+                    // Run tests
+                    sh '''
+                        . .venv/bin/activate
+                        echo "Running tests..."
+                        make test
+                        echo "✓ Tests completed"
+                    '''
+                }
+            }
+            post {
+                always {
+                    // Publish JUnit test results
+                    junit 'reports/junit.xml'
+                    
+                    // Archive coverage reports
+                    archiveArtifacts artifacts: 'coverage.xml', allowEmptyArchive: true
+                    archiveArtifacts artifacts: 'reports/**/*', allowEmptyArchive: true
+                    
+                    // Publish HTML coverage if exists
+                    script {
+                        if (fileExists('htmlcov/index.html')) {
+                            publishHTML([
+                                reportName: 'Coverage Report',
+                                reportDir: 'htmlcov',
+                                reportFiles: 'index.html',
+                                keepAll: true
+                            ])
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('SonarQube Analysis') {
+            steps {
+                script {
+                    // Check if sonar-project.properties exists
+                    if (fileExists('sonar-project.properties')) {
+                        withSonarQubeEnv('sonar-local') {
+                            sh '''
+                                . .venv/bin/activate
+                                sonar-scanner
+                            '''
+                        }
+                    } else {
+                        echo "⚠ sonar-project.properties not found, skipping SonarQube analysis"
+                    }
+                }
+            }
+        }
+        
+        stage('Quality Gate') {
+            steps {
+                script {
+                    if (fileExists('sonar-project.properties')) {
+                        timeout(time: 5, unit: 'MINUTES') {
+                            waitForQualityGate abortPipeline: true
+                        }
+                    } else {
+                        echo "⚠ Skipping quality gate (SonarQube not configured)"
+                    }
+                }
+            }
+        }
+        
+        stage('Docker Build & Push') {
+            steps {
+                script {
+                    // Ensure ECR repository exists
+                    sh """
+                        echo "Checking ECR repository..."
+                        if ! aws ecr describe-repositories --repository-names ${APP_NAME} --region ${AWS_REGION} &>/dev/null; then
+                            echo "Creating ECR repository..."
+                            aws ecr create-repository \\
+                                --repository-name ${APP_NAME} \\
+                                --region ${AWS_REGION} \\
+                                --image-scanning-configuration scanOnPush=true \\
+                                --encryption-configuration encryptionType=AES256
+                        else
+                            echo "✓ ECR repository exists"
+                        fi
+                    """
+                    
+                    // Login to ECR
+                    sh """
+                        echo "Logging into ECR..."
+                        aws ecr get-login-password --region ${AWS_REGION} | \\
+                            docker login --username AWS --password-stdin ${ECR_URL}
+                        echo "✓ ECR login successful"
+                    """
+                    
+                    // Build Docker image with multiple tags
+                    sh """
+                        echo "Building Docker image..."
+                        docker build \\
+                            --platform linux/amd64 \\
+                            -t ${ECR_REPO}:${IMAGE_TAG} \\
+                            -t ${ECR_REPO}:latest \\
+                            .
+                        echo "✓ Docker image built"
+                    """
+                    
+                    // Push both tags
+                    sh """
+                        echo "Pushing Docker images..."
+                        docker push ${ECR_REPO}:${IMAGE_TAG}
+                        docker push ${ECR_REPO}:latest
+                        echo "✓ Images pushed to ECR"
+                    """
+                }
+            }
+        }
+        
+        stage('Deploy to EC2') {
+            when {
+                // Only deploy on main/master branch
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                }
+            }
+            steps {
+                script {
+                    // TODO: Replace <EC2_PUBLIC_IP> with your EC2 instance public IP
+                    def EC2_HOST = '<EC2_PUBLIC_IP>'
+                    def EC2_USER = 'ec2-user'
+                    
+                    sshagent(credentials: ['ec2-ssh']) {
+                        sh """
+                            echo "Deploying to EC2..."
+                            
+                            ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} << 'ENDSSH'
+                                set -e
+                                cd /opt/password-manager
+                                
+                                # Login to ECR
+                                echo "Logging into ECR..."
+                                export AWS_REGION=${AWS_REGION}
+                                export ACCOUNT_ID=${ACCOUNT_ID}
+                                aws ecr get-login-password --region \${AWS_REGION} | \\
+                                    docker login --username AWS --password-stdin \${ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com
+                                
+                                # Set image tag
+                                export TAG=${IMAGE_TAG}
+                                echo "Deploying tag: \${TAG}"
+                                
+                                # Fetch environment variables
+                                ./fetch-env.sh
+                                
+                                # Update docker-compose.yml with new tag
+                                sed -i "s|image:.*|image: \${ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/${APP_NAME}:\${TAG}|" docker-compose.yml
+                                
+                                # Pull and start
+                                docker compose pull
+                                docker compose up -d
+                                
+                                # Health check loop (up to 20 tries, 5 seconds apart)
+                                echo "Waiting for application to be healthy..."
+                                MAX_TRIES=20
+                                TRIES=0
+                                while [ \$TRIES -lt \$MAX_TRIES ]; do
+                                    if curl -f http://localhost/health &>/dev/null; then
+                                        echo "✓ Application is healthy!"
+                                        exit 0
+                                    fi
+                                    TRIES=\$((TRIES + 1))
+                                    echo "Health check attempt \$TRIES/\$MAX_TRIES failed, retrying in 5 seconds..."
+                                    sleep 5
+                                done
+                                
+                                # Health check failed - rollback
+                                echo "✗ Health check failed after \$MAX_TRIES attempts"
+                                echo "Rolling back to latest tag..."
+                                
+                                # Rollback to latest
+                                sed -i "s|image:.*|image: \${ACCOUNT_ID}.dkr.ecr.\${AWS_REGION}.amazonaws.com/${APP_NAME}:latest|" docker-compose.yml
+                                docker compose pull
+                                docker compose up -d
+                                
+                                echo "Rollback complete, but deployment failed"
+                                exit 1
+ENDSSH
+                        """
+                    }
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            // Clean workspace
+            cleanWs()
+            
+            // Summary
+            script {
+                echo """
+                    ==========================================
+                    Pipeline Summary
+                    ==========================================
+                    Branch: ${env.BRANCH_NAME}
+                    Commit: ${env.GIT_COMMIT?.take(12) ?: 'N/A'}
+                    Image Tag: ${IMAGE_TAG}
+                    ECR Repository: ${ECR_REPO}
+                    ==========================================
+                """
+            }
+        }
+        success {
+            echo "✅ Pipeline completed successfully!"
+        }
+        failure {
+            echo "❌ Pipeline failed!"
+        }
+    }
+}
+

@@ -96,6 +96,82 @@ python app.py
 
 The application will be available at `http://localhost:5000`
 
+## Docker Deployment
+
+### Prerequisites
+- Docker installed and running
+- AWS credentials configured (see above)
+
+### Build Docker Image
+
+```bash
+docker build -t password-manager:local .
+```
+
+### Run with Docker
+
+#### Option 1: Using .env file (Recommended)
+
+1. Create a `.env` file from `env.example`:
+   ```bash
+   cp env.example .env
+   ```
+
+2. Edit `.env` and add your AWS credentials:
+   ```env
+   AWS_ACCESS_KEY_ID=your-access-key
+   AWS_SECRET_ACCESS_KEY=your-secret-key
+   AWS_REGION=eu-north-1
+   SESSION_SECRET=your-session-secret-key
+   PORT=5001
+   ```
+
+3. Run the container:
+   ```bash
+   docker run -p 5001:5001 --env-file .env password-manager:local
+   ```
+
+#### Option 2: Using environment variables
+
+```bash
+docker run -p 5001:5001 \
+  --env PORT=5001 \
+  --env AWS_ACCESS_KEY_ID=your-access-key \
+  --env AWS_SECRET_ACCESS_KEY=your-secret-key \
+  --env AWS_REGION=eu-north-1 \
+  --env SESSION_SECRET=your-session-secret \
+  password-manager:local
+```
+
+#### Option 3: Using Docker Compose (Recommended for development)
+
+1. Create a `.env` file (see Option 1 above)
+
+2. Run with docker-compose:
+   ```bash
+   docker-compose up
+   ```
+
+3. The application will be available at `http://localhost:5001`
+
+### Verify Docker Deployment
+
+```bash
+# Health check
+curl http://localhost:5001/health
+# Should return: {"ok": true}
+```
+
+### Using Makefile
+
+```bash
+# Build Docker image
+make docker-build
+
+# Run Docker container (uses .env file if available)
+make docker-run
+```
+
 ## Usage
 
 ### 1. Register a new account
@@ -178,10 +254,10 @@ password-manager/
 ### Environment Variables
 
 - `FLASK_ENV`: Flask environment (development/production)
-- `SECRET_KEY`: Secret key for Flask sessions
+- `SESSION_SECRET`: Secret key for Flask sessions (required in production)
 - `PORT`: Port to run the application on (default: 5000)
-- `AWS_ACCESS_KEY_ID`: AWS access key
-- `AWS_SECRET_ACCESS_KEY`: AWS secret key
+- `AWS_ACCESS_KEY_ID`: AWS access key (required)
+- `AWS_SECRET_ACCESS_KEY`: AWS secret key (required)
 - `AWS_REGION`: AWS region (default: eu-north-1)
 - `AWS_ENDPOINT`: Optional endpoint for local DynamoDB
 - `DYNAMODB_USERS_TABLE`: Users table name (default: PasswordManager-Users)
@@ -201,12 +277,15 @@ To use DynamoDB Local for development:
 
 ## Troubleshooting
 
-### AWS Credentials Error
+### AWS Credentials Error (Docker)
 
-Make sure your AWS credentials are configured correctly. Check:
-- Environment variables are set
-- AWS credentials file exists and is correct
-- IAM user has DynamoDB permissions
+When running in Docker, make sure AWS credentials are passed to the container:
+- Use `--env-file .env` flag with a `.env` file containing credentials
+- Or pass credentials via `--env` flags
+- Or use `docker-compose up` which automatically loads `.env` file
+
+**Error**: `botocore.exceptions.NoCredentialsError: Unable to locate credentials`
+**Solution**: Ensure AWS credentials are provided to the Docker container via environment variables.
 
 ### Table Creation Error
 
