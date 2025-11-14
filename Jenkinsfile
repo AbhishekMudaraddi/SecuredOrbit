@@ -274,13 +274,28 @@ pipeline {
                     def EC2_HOST = '54.198.152.202'
                     def EC2_USER = 'ec2-user'
                     
-                    sshagent(credentials: ['ec2-ssh']) {
-                        sh """
-                            #!/bin/bash
-                            set -e
-                            echo "Deploying to EC2..."
-                            
-                            ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} << 'ENDSSH'
+                    // Use SSH agent for deployment
+                    try {
+                        sshagent(credentials: ['ec2-ssh']) {
+                            sh """
+                                #!/bin/bash
+                                set -e
+                                echo "Deploying to EC2..."
+                                echo "EC2 Host: ${EC2_HOST}"
+                                echo "EC2 User: ${EC2_USER}"
+                                
+                                # Test SSH connection first
+                                echo "Testing SSH connection..."
+                                ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${EC2_USER}@${EC2_HOST} "echo 'SSH connection successful'" || {
+                                    echo "ERROR: SSH connection failed"
+                                    echo "Check:"
+                                    echo "  1. EC2 instance is running"
+                                    echo "  2. Security group allows SSH from Jenkins IP"
+                                    echo "  3. SSH credentials are correct"
+                                    exit 1
+                                }
+                                
+                                ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} << 'ENDSSH'
                                 #!/bin/bash
                                 set -e
                                 cd /opt/password-manager
@@ -332,7 +347,14 @@ pipeline {
                                 echo "Rollback complete, but deployment failed"
                                 exit 1
 ENDSSH
-                        """
+                            """
+                        }
+                    } catch (Exception e) {
+                        echo "ERROR: SSH deployment failed: ${e.getMessage()}"
+                        echo "Check SSH credentials configuration in Jenkins"
+                        echo "Go to: Manage Jenkins → Credentials → System → Global credentials"
+                        echo "Verify credential ID 'ec2-ssh' exists and is correct"
+                        throw e
                     }
                 }
             }
