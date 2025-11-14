@@ -288,10 +288,10 @@ def migrate_user_passwords_to_new_key(user_id, legacy_password, new_encryption_k
 # Routes
 @app.route('/')
 def index():
-    """Home page - redirect to login or dashboard"""
+    """Landing page with Login and Register options"""
     if 'user_id' in session:
         return redirect(url_for('dashboard'))
-    return redirect(url_for('login'))
+    return render_template('index.html')
 
 
 @app.route('/health')
