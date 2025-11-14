@@ -104,64 +104,88 @@ pipeline {
                     if (fileExists('sonar-project.properties')) {
                         echo "✓ Running SonarQube analysis using Docker..."
                         withSonarQubeEnv('sonar-local') {
+                            // Track if scanner actually ran
+                            def scannerRan = false
+                            
                             // Use Docker to run sonar-scanner (no local installation needed)
                             // Note: withSonarQubeEnv sets SONAR_HOST_URL and SONAR_TOKEN environment variables
-                            sh '''
-                                #!/bin/bash
-                                set -e
-                                
-                                # Check if Docker is available
-                                if ! command -v docker &> /dev/null; then
-                                    echo "⚠ Docker not found, skipping SonarQube analysis"
-                                    exit 0
-                                fi
-                                
-                                # Check if SonarQube environment variables are set
-                                if [ -z "${SONAR_HOST_URL}" ] || [ -z "${SONAR_TOKEN}" ]; then
-                                    echo "⚠ SonarQube credentials not configured, skipping analysis"
-                                    echo "Configure SonarQube in Jenkins: Manage Jenkins → Configure System → SonarQube servers"
-                                    exit 0
-                                fi
-                                
-                                # Convert localhost:9000 to host.docker.internal:9000 for Docker container access
-                                # Docker containers can't access localhost on the host, need host.docker.internal
-                                SONAR_URL="${SONAR_HOST_URL}"
-                                if [[ "${SONAR_URL}" == *"localhost"* ]] || [[ "${SONAR_URL}" == *"127.0.0.1"* ]]; then
-                                    SONAR_URL=$(echo "${SONAR_URL}" | sed 's/localhost/host.docker.internal/g' | sed 's/127.0.0.1/host.docker.internal/g')
-                                    echo "Updated SonarQube URL for Docker: ${SONAR_URL}"
-                                fi
-                                
-                                echo "SonarQube URL: ${SONAR_URL}"
-                                echo "SonarQube Token: ${SONAR_TOKEN:0:10}..." # Show first 10 chars for debugging
-                                
-                                # Run sonar-scanner via Docker
-                                # Mount current directory and use sonar-scanner Docker image
-                                # Pass SonarQube properties as environment variables (scanner reads SONAR_HOST_URL and SONAR_TOKEN)
-                                # The scanner will write report-task.txt to the mounted directory
-                                docker run --rm \\
-                                    -v "$(pwd):/usr/src" \\
-                                    -w /usr/src \\
-                                    -e SONAR_HOST_URL="${SONAR_URL}" \\
-                                    -e SONAR_TOKEN="${SONAR_TOKEN}" \\
-                                    sonarsource/sonar-scanner-cli:latest
-                                
-                                echo "✓ SonarQube analysis completed"
-                                
-                                # Verify report-task.txt was created (contains task ID for quality gate)
-                                if [ -f ".scannerwork/report-task.txt" ]; then
-                                    echo "✓ report-task.txt found"
-                                    cat .scannerwork/report-task.txt
-                                else
-                                    echo "⚠ report-task.txt not found, quality gate may fail"
-                                fi
-                            '''
+                            def scannerOutput = sh(
+                                script: '''
+                                    #!/bin/bash
+                                    set -e
+                                    
+                                    # Check if Docker is available
+                                    if ! command -v docker &> /dev/null; then
+                                        echo "⚠ Docker not found, skipping SonarQube analysis"
+                                        exit 0
+                                    fi
+                                    
+                                    # Check if SonarQube environment variables are set
+                                    if [ -z "${SONAR_HOST_URL}" ] || [ -z "${SONAR_TOKEN}" ]; then
+                                        echo "⚠ SonarQube credentials not configured, skipping analysis"
+                                        echo "Configure SonarQube in Jenkins: Manage Jenkins → Configure System → SonarQube servers"
+                                        echo "SONAR_HOST_URL=${SONAR_HOST_URL}"
+                                        echo "SONAR_TOKEN=${SONAR_TOKEN}"
+                                        exit 0
+                                    fi
+                                    
+                                    # Convert localhost:9000 to host.docker.internal:9000 for Docker container access
+                                    # Docker containers can't access localhost on the host, need host.docker.internal
+                                    SONAR_URL="${SONAR_HOST_URL}"
+                                    if [[ "${SONAR_URL}" == *"localhost"* ]] || [[ "${SONAR_URL}" == *"127.0.0.1"* ]]; then
+                                        SONAR_URL=$(echo "${SONAR_URL}" | sed 's/localhost/host.docker.internal/g' | sed 's/127.0.0.1/host.docker.internal/g')
+                                        echo "Updated SonarQube URL for Docker: ${SONAR_URL}"
+                                    fi
+                                    
+                                    echo "SonarQube URL: ${SONAR_URL}"
+                                    echo "SonarQube Token: ${SONAR_TOKEN:0:10}..." # Show first 10 chars for debugging
+                                    
+                                    # Run sonar-scanner via Docker
+                                    # Mount current directory and use sonar-scanner Docker image
+                                    # Pass SonarQube properties as environment variables (scanner reads SONAR_HOST_URL and SONAR_TOKEN)
+                                    # The scanner will write report-task.txt to the mounted directory
+                                    docker run --rm \\
+                                        -v "$(pwd):/usr/src" \\
+                                        -w /usr/src \\
+                                        -e SONAR_HOST_URL="${SONAR_URL}" \\
+                                        -e SONAR_TOKEN="${SONAR_TOKEN}" \\
+                                        sonarsource/sonar-scanner-cli:latest
+                                    
+                                    echo "✓ SonarQube analysis completed"
+                                    
+                                    # Verify report-task.txt was created (contains task ID for quality gate)
+                                    if [ -f ".scannerwork/report-task.txt" ]; then
+                                        echo "✓ report-task.txt found"
+                                        cat .scannerwork/report-task.txt
+                                        echo "SCANNER_RAN=yes"
+                                    else
+                                        echo "⚠ report-task.txt not found"
+                                        echo "SCANNER_RAN=no"
+                                    fi
+                                ''',
+                                returnStdout: true
+                            )
                             
-                            // Wait for quality gate - must be inside withSonarQubeEnv block
-                            script {
-                                echo "Waiting for SonarQube Quality Gate..."
-                                timeout(time: 5, unit: 'MINUTES') {
-                                    waitForQualityGate abortPipeline: true
+                            // Check if scanner actually ran
+                            if (scannerOutput.contains('SCANNER_RAN=yes')) {
+                                scannerRan = true
+                                echo scannerOutput
+                            } else {
+                                echo scannerOutput
+                                echo "⚠ SonarQube scanner did not run, skipping quality gate"
+                            }
+                            
+                            // Wait for quality gate only if scanner ran successfully
+                            if (scannerRan && fileExists('.scannerwork/report-task.txt')) {
+                                script {
+                                    echo "Waiting for SonarQube Quality Gate..."
+                                    timeout(time: 5, unit: 'MINUTES') {
+                                        waitForQualityGate abortPipeline: true
+                                    }
                                 }
+                            } else {
+                                echo "⚠ Skipping quality gate - SonarQube analysis did not complete"
+                                echo "Fix: Configure SonarQube token in Jenkins → Manage Jenkins → Configure System → SonarQube servers"
                             }
                         }
                     } else {
