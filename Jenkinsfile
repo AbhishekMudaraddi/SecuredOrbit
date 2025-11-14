@@ -105,6 +105,7 @@ pipeline {
                         echo "✓ Running SonarQube analysis using Docker..."
                         withSonarQubeEnv('sonar-local') {
                             // Use Docker to run sonar-scanner (no local installation needed)
+                            // Note: withSonarQubeEnv sets SONAR_HOST_URL and SONAR_TOKEN environment variables
                             sh '''
                                 #!/bin/bash
                                 set -e
@@ -112,6 +113,13 @@ pipeline {
                                 # Check if Docker is available
                                 if ! command -v docker &> /dev/null; then
                                     echo "⚠ Docker not found, skipping SonarQube analysis"
+                                    exit 0
+                                fi
+                                
+                                # Check if SonarQube environment variables are set
+                                if [ -z "${SONAR_HOST_URL}" ] || [ -z "${SONAR_TOKEN}" ]; then
+                                    echo "⚠ SonarQube credentials not configured, skipping analysis"
+                                    echo "Configure SonarQube in Jenkins: Manage Jenkins → Configure System → SonarQube servers"
                                     exit 0
                                 fi
                                 
@@ -123,8 +131,12 @@ pipeline {
                                     echo "Updated SonarQube URL for Docker: ${SONAR_URL}"
                                 fi
                                 
+                                echo "SonarQube URL: ${SONAR_URL}"
+                                echo "SonarQube Token: ${SONAR_TOKEN:0:10}..." # Show first 10 chars for debugging
+                                
                                 # Run sonar-scanner via Docker
                                 # Mount current directory and use sonar-scanner Docker image
+                                # Pass SonarQube properties as environment variables (scanner reads SONAR_HOST_URL and SONAR_TOKEN)
                                 docker run --rm \\
                                     -v "$(pwd):/usr/src" \\
                                     -w /usr/src \\
