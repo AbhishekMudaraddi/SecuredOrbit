@@ -7,14 +7,16 @@ pipeline {
         AWS_REGION = 'us-east-1'
         
         // ECR Configuration
-        // TODO: Replace <ACCOUNT_ID> with your AWS Account ID (e.g., 503561414328)
-        ACCOUNT_ID = '<ACCOUNT_ID>'
+        ACCOUNT_ID = '503561414328'
         ECR_URL = "${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
         ECR_REPO = "${ECR_URL}/${APP_NAME}"
         
         // Image Tagging
         // Use first 12 characters of git commit hash, or 'dev' if not available
         IMAGE_TAG = "${env.GIT_COMMIT?.take(12) ?: 'dev'}"
+        
+        // Fix PATH for macOS
+        PATH = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${env.PATH}"
     }
     
     stages {
@@ -23,7 +25,7 @@ pipeline {
                 checkout scm
                 script {
                     // Display git commit info
-                    sh 'git log -1 --oneline'
+                    sh(script: 'git log -1 --oneline', returnStdout: true)
                 }
             }
         }
@@ -31,9 +33,11 @@ pipeline {
         stage('Setup Python') {
             steps {
                 sh '''
+                    #!/bin/bash
+                    set -e
                     echo "Setting up Python virtual environment..."
                     python3 -m venv .venv
-                    . .venv/bin/activate
+                    source .venv/bin/activate
                     pip install --upgrade pip
                     pip install -r requirements.txt
                     echo "✓ Python environment ready"
@@ -46,7 +50,9 @@ pipeline {
                 script {
                     // Run flake8 if available (don't fail build)
                     sh '''
-                        . .venv/bin/activate
+                        #!/bin/bash
+                        set -e
+                        source .venv/bin/activate
                         if command -v flake8 &> /dev/null || pip show flake8 &> /dev/null; then
                             echo "Running flake8..."
                             flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics || true
@@ -58,7 +64,9 @@ pipeline {
                     
                     // Run tests
                     sh '''
-                        . .venv/bin/activate
+                        #!/bin/bash
+                        set -e
+                        source .venv/bin/activate
                         echo "Running tests..."
                         make test
                         echo "✓ Tests completed"
@@ -96,7 +104,9 @@ pipeline {
                     if (fileExists('sonar-project.properties')) {
                         withSonarQubeEnv('sonar-local') {
                             sh '''
-                                . .venv/bin/activate
+                                #!/bin/bash
+                                set -e
+                                source .venv/bin/activate
                                 sonar-scanner
                             '''
                         }
@@ -126,6 +136,8 @@ pipeline {
                 script {
                     // Ensure ECR repository exists
                     sh """
+                        #!/bin/bash
+                        set -e
                         echo "Checking ECR repository..."
                         if ! aws ecr describe-repositories --repository-names ${APP_NAME} --region ${AWS_REGION} &>/dev/null; then
                             echo "Creating ECR repository..."
@@ -141,6 +153,8 @@ pipeline {
                     
                     // Login to ECR
                     sh """
+                        #!/bin/bash
+                        set -e
                         echo "Logging into ECR..."
                         aws ecr get-login-password --region ${AWS_REGION} | \\
                             docker login --username AWS --password-stdin ${ECR_URL}
@@ -149,6 +163,8 @@ pipeline {
                     
                     // Build Docker image with multiple tags
                     sh """
+                        #!/bin/bash
+                        set -e
                         echo "Building Docker image..."
                         docker build \\
                             --platform linux/amd64 \\
@@ -160,6 +176,8 @@ pipeline {
                     
                     // Push both tags
                     sh """
+                        #!/bin/bash
+                        set -e
                         echo "Pushing Docker images..."
                         docker push ${ECR_REPO}:${IMAGE_TAG}
                         docker push ${ECR_REPO}:latest
@@ -180,14 +198,17 @@ pipeline {
             steps {
                 script {
                     // TODO: Replace <EC2_PUBLIC_IP> with your EC2 instance public IP
-                    def EC2_HOST = '<EC2_PUBLIC_IP>'
+                    def EC2_HOST = '54.198.152.202'
                     def EC2_USER = 'ec2-user'
                     
                     sshagent(credentials: ['ec2-ssh']) {
                         sh """
+                            #!/bin/bash
+                            set -e
                             echo "Deploying to EC2..."
                             
                             ssh -o StrictHostKeyChecking=no ${EC2_USER}@${EC2_HOST} << 'ENDSSH'
+                                #!/bin/bash
                                 set -e
                                 cd /opt/password-manager
                                 
