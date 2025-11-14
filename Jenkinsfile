@@ -97,7 +97,7 @@ pipeline {
             }
         }
         
-        stage('SonarQube Analysis') {
+        stage('SonarQube Analysis & Quality Gate') {
             steps {
                 script {
                     // Check if sonar-project.properties exists
@@ -137,6 +137,7 @@ pipeline {
                                 # Run sonar-scanner via Docker
                                 # Mount current directory and use sonar-scanner Docker image
                                 # Pass SonarQube properties as environment variables (scanner reads SONAR_HOST_URL and SONAR_TOKEN)
+                                # The scanner will write report-task.txt to the mounted directory
                                 docker run --rm \\
                                     -v "$(pwd):/usr/src" \\
                                     -w /usr/src \\
@@ -145,25 +146,26 @@ pipeline {
                                     sonarsource/sonar-scanner-cli:latest
                                 
                                 echo "✓ SonarQube analysis completed"
+                                
+                                # Verify report-task.txt was created (contains task ID for quality gate)
+                                if [ -f ".scannerwork/report-task.txt" ]; then
+                                    echo "✓ report-task.txt found"
+                                    cat .scannerwork/report-task.txt
+                                else
+                                    echo "⚠ report-task.txt not found, quality gate may fail"
+                                fi
                             '''
+                            
+                            // Wait for quality gate - must be inside withSonarQubeEnv block
+                            script {
+                                echo "Waiting for SonarQube Quality Gate..."
+                                timeout(time: 5, unit: 'MINUTES') {
+                                    waitForQualityGate abortPipeline: true
+                                }
+                            }
                         }
                     } else {
                         echo "⚠ sonar-project.properties not found, skipping SonarQube analysis"
-                    }
-                }
-            }
-        }
-        
-        stage('Quality Gate') {
-            steps {
-                script {
-                    if (fileExists('sonar-project.properties')) {
-                        echo "Waiting for SonarQube Quality Gate..."
-                        timeout(time: 5, unit: 'MINUTES') {
-                            waitForQualityGate abortPipeline: true
-                        }
-                    } else {
-                        echo "⚠ Skipping quality gate (SonarQube not configured)"
                     }
                 }
             }
