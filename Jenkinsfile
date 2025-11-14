@@ -102,12 +102,37 @@ pipeline {
                 script {
                     // Check if sonar-project.properties exists
                     if (fileExists('sonar-project.properties')) {
+                        echo "✓ Running SonarQube analysis using Docker..."
                         withSonarQubeEnv('sonar-local') {
+                            // Use Docker to run sonar-scanner (no local installation needed)
                             sh '''
                                 #!/bin/bash
                                 set -e
-                                source .venv/bin/activate
-                                sonar-scanner
+                                
+                                # Check if Docker is available
+                                if ! command -v docker &> /dev/null; then
+                                    echo "⚠ Docker not found, skipping SonarQube analysis"
+                                    exit 0
+                                fi
+                                
+                                # Convert localhost:9000 to host.docker.internal:9000 for Docker container access
+                                # Docker containers can't access localhost on the host, need host.docker.internal
+                                SONAR_URL="${SONAR_HOST_URL}"
+                                if [[ "${SONAR_URL}" == *"localhost"* ]] || [[ "${SONAR_URL}" == *"127.0.0.1"* ]]; then
+                                    SONAR_URL=$(echo "${SONAR_URL}" | sed 's/localhost/host.docker.internal/g' | sed 's/127.0.0.1/host.docker.internal/g')
+                                    echo "Updated SonarQube URL for Docker: ${SONAR_URL}"
+                                fi
+                                
+                                # Run sonar-scanner via Docker
+                                # Mount current directory and use sonar-scanner Docker image
+                                docker run --rm \\
+                                    -v "$(pwd):/usr/src" \\
+                                    -w /usr/src \\
+                                    -e SONAR_HOST_URL="${SONAR_URL}" \\
+                                    -e SONAR_TOKEN="${SONAR_TOKEN}" \\
+                                    sonarsource/sonar-scanner-cli:latest
+                                
+                                echo "✓ SonarQube analysis completed"
                             '''
                         }
                     } else {
@@ -121,6 +146,7 @@ pipeline {
             steps {
                 script {
                     if (fileExists('sonar-project.properties')) {
+                        echo "Waiting for SonarQube Quality Gate..."
                         timeout(time: 5, unit: 'MINUTES') {
                             waitForQualityGate abortPipeline: true
                         }
