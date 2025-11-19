@@ -27,7 +27,7 @@ function evaluatePasswordStrength(password) {
     if (score > 5) score = 5;
 
     const labels = ['Very Weak', 'Weak', 'Fair', 'Good', 'Strong', 'Very Strong'];
-    const colors = ['#dc3545', '#f66d44', '#f4b400', '#17a2b8', '#28a745', '#2ecc71'];
+    const colors = ['#dc3545', '#f66d44', '#f4b400', '#17a2b8', '#28a745', '#06c258'];
 
     return {
         score,

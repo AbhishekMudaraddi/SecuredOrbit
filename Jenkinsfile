@@ -104,7 +104,7 @@ pipeline {
                     if (fileExists('sonar-project.properties')) {
                         echo "✓ Running SonarQube analysis using Docker..."
                         withSonarQubeEnv('sonar-local') {
-                            // Track if scanner actually ran
+                         
                             def scannerRan = false
                             
                             // Use Docker to run sonar-scanner (no local installation needed)

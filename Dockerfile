@@ -1,32 +1,23 @@
 FROM python:3.11-slim
 
-# Set working directory
 WORKDIR /app
-
-# Set environment variables
+# env variables
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Install system dependencies
+# dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better caching
 COPY requirements.txt .
-
-# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
 COPY . .
-
-# Create reports directory for test outputs
+# reports of test
 RUN mkdir -p reports
-
-# Expose port (default 5001, can be overridden via PORT env var)
 EXPOSE 5001
 
 # Health check (uses default port 5001)
