@@ -380,3 +380,25 @@ The project demonstrates that modern web applications can leverage cloud infrast
 
 [25] M. Fowler, "Microservices," martinfowler.com, Mar. 2014. [Online]. Available: https://martinfowler.com/articles/microservices.html
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Abstract
+
+In this paper, design, implementation and deployment of a safer cloud-based password management system are introduced with the help of Flask web framework and deployed on Amazon Web Services (AWS) platform. The system offers its users a one-stop solution of saving and managing encrypted passwords among various online services. This application has strong security features like bcrypt password hashing, Fernet symmetric encryption of stored credentials, and Two-Factor Authentication with Google Authenticator using Time-based two factor authentication (TOTP). The system makes use of Amazon DynamoDB, which is a NoSQL data storage database that is backed by scalability and used to store data in a high availability and high performance environment. The entire Continuous Integration and Continuous Deployment (CI/CD) process is done through Jenkins whereby the build, test, and delivery steps are automated. The pipeline consists of automatic testing using the pytest, code quality analysis using SonarQube, construction of Docker images and automatic deployment to AWS EC2 machines. The system exhibits the current DevOps practices such as infrastructure as code, automated testing, container orchestration, and secure configuration management with AWS Systems Manager Parameter Store. The usefulness of the implemented security measures and scalability of the cloud-based architecture can be confirmed through performance evaluation and security analysis.
