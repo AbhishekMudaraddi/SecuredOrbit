@@ -1,16 +1,14 @@
-# Password Manager - Flask & DynamoDB
+# Password Manager V2
 
-A simple password manager application built with Flask, HTML, CSS, JavaScript, and Amazon DynamoDB.
+A simple Flask-based password manager that stores encrypted passwords in Amazon DynamoDB.
 
 ## Features
 
-- 🔐 User authentication with unique email enforcement
-- 📲 Google Authenticator (TOTP) two-factor authentication
-- 🔁 Recovery words (5-word phrase) for password resets
-- 📊 Live password strength indicators (registration & vault)
-- 💾 Encrypted password storage in DynamoDB (Fernet symmetric encryption)
-- 🔍 Instant search across saved passwords (website / username / notes)
-- 🎨 Clean, responsive HTML/CSS/JS frontend
+- 🔐 User authentication (username/password)
+- 💾 Encrypted password storage (Fernet encryption)
+- 🌐 Store passwords for different websites/services
+- 🔍 View, add, edit, and delete stored passwords
+- 🔒 Secure - passwords are encrypted before storing in DynamoDB
 
 ## Prerequisites
 
@@ -18,281 +16,173 @@ A simple password manager application built with Flask, HTML, CSS, JavaScript, a
 - AWS Account with DynamoDB access
 - AWS Credentials configured
 
-## Installation
+## Setup Instructions
 
-### 1. Clone the repository
-
-```bash
-git clone <your-repo-url>
-cd password-manager
-```
-
-### 2. Create virtual environment
+### 1. Install Dependencies
 
 ```bash
+# Create virtual environment
 python3 -m venv venv
+
+# Activate virtual environment
 source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
 
-### 3. Install dependencies
-
-```bash
+# Install dependencies
 pip install -r requirements.txt
 ```
 
-### 4. Configure AWS Credentials
+### 2. Configure AWS Credentials
 
-You can configure AWS credentials in one of the following ways:
-
-#### Option A: Environment variables
+Create a `.env` file from the example:
 
 ```bash
-export AWS_ACCESS_KEY_ID=your-access-key
-export AWS_SECRET_ACCESS_KEY=your-secret-key
-export AWS_REGION=eu-north-1
-```
-
-#### Option B: AWS credentials file
-
-Create `~/.aws/credentials`:
-
-```ini
-[default]
-aws_access_key_id = your-access-key
-aws_secret_access_key = your-secret-key
-region = eu-north-1
-```
-
-#### Option C: .env file
-
-Create a `.env` file from `.env.example`:
-
-```bash
-cp .env.example .env
+cp env.example .env
 ```
 
 Edit `.env` and add your AWS credentials:
 
 ```env
-AWS_ACCESS_KEY_ID=your-access-key
-AWS_SECRET_ACCESS_KEY=your-secret-key
-AWS_REGION=eu-north-1
-SECRET_KEY=your-secret-key-for-flask-sessions
+# Flask Configuration
+FLASK_ENV=development
+SECRET_KEY=your-secret-key-here-change-in-production
+PORT=5000
+
+# AWS Configuration
+AWS_ACCESS_KEY_ID=your-aws-access-key
+AWS_SECRET_ACCESS_KEY=your-aws-secret-key
+AWS_REGION=us-east-1
+
+# DynamoDB Tables (New tables - won't conflict with existing app)
+DYNAMODB_USERS_TABLE=PasswordManagerV2-Users
+DYNAMODB_PASSWORDS_TABLE=PasswordManagerV2-Passwords
 ```
 
-### 5. Initialize DynamoDB Tables
+### 3. AWS Credentials Setup
 
-The tables will be created automatically when you first run the application. The following tables will be created:
+You can configure AWS credentials in one of these ways:
 
-- `PasswordManager-Users` - Stores user accounts
-- `PasswordManager-Accounts` - Reserved for future use
-- `PasswordManager-Passwords` - Stores encrypted passwords
+**Option A: Environment Variables**
+```bash
+export AWS_ACCESS_KEY_ID=your-access-key
+export AWS_SECRET_ACCESS_KEY=your-secret-key
+export AWS_REGION=us-east-1
+```
 
-### 6. Run the application
+**Option B: AWS Credentials File**
+Create `~/.aws/credentials`:
+```ini
+[default]
+aws_access_key_id = your-access-key
+aws_secret_access_key = your-secret-key
+region = us-east-1
+```
+
+**Option C: .env File (Recommended)**
+Use the `.env` file as shown in step 2.
+
+### 4. Run the Application
 
 ```bash
 python app.py
 ```
 
-The application will be available at `http://localhost:5000`
+The application will:
+- Automatically create DynamoDB tables if they don't exist
+- Start Flask development server on `http://localhost:5000`
 
-## Docker Deployment
+### 5. Access the Application
 
-### Prerequisites
-- Docker installed and running
-- AWS credentials configured (see above)
-
-### Build Docker Image
-
-```bash
-docker build -t password-manager:local .
-```
-
-### Run with Docker
-
-#### Option 1: Using .env file (Recommended)
-
-1. Create a `.env` file from `env.example`:
-   ```bash
-   cp env.example .env
-   ```
-
-2. Edit `.env` and add your AWS credentials:
-   ```env
-   AWS_ACCESS_KEY_ID=your-access-key
-   AWS_SECRET_ACCESS_KEY=your-secret-key
-   AWS_REGION=eu-north-1
-   SESSION_SECRET=your-session-secret-key
-   PORT=5001
-   ```
-
-3. Run the container:
-   ```bash
-   docker run -p 5001:5001 --env-file .env password-manager:local
-   ```
-
-#### Option 2: Using environment variables
-
-```bash
-docker run -p 5001:5001 \
-  --env PORT=5001 \
-  --env AWS_ACCESS_KEY_ID=your-access-key \
-  --env AWS_SECRET_ACCESS_KEY=your-secret-key \
-  --env AWS_REGION=eu-north-1 \
-  --env SESSION_SECRET=your-session-secret \
-  password-manager:local
-```
-
-#### Option 3: Using Docker Compose (Recommended for development)
-
-1. Create a `.env` file (see Option 1 above)
-
-2. Run with docker-compose:
-   ```bash
-   docker-compose up
-   ```
-
-3. The application will be available at `http://localhost:5001`
-
-### Verify Docker Deployment
-
-```bash
-# Health check
-curl http://localhost:5001/health
-# Should return: {"ok": true}
-```
-
-### Using Makefile
-
-```bash
-# Build Docker image
-make docker-build
-
-# Run Docker container (uses .env file if available)
-make docker-run
-```
-
-## Usage
-
-### 1. Register a new account
-
-1. Navigate to `http://localhost:5000/register`
-2. Enter email, username, and password (watch the live strength indicator)
-3. Scan the QR code with Google Authenticator and verify the 6-digit code
-4. Save the 5 recovery words in a secure location
-
-### 2. Login
-
-1. Navigate to `http://localhost:5000/login`
-2. Enter your username and password
-3. Enter the 6-digit code from Google Authenticator
-4. Click "Login"
-
-### 3. Manage Passwords
-
-1. After login, your passwords load automatically
-2. Click "Add New Password" to store new credentials
-3. Use "Edit" or "Delete" to manage existing entries
+Open your browser and go to:
+- **Home**: http://localhost:5000
+- **Register**: http://localhost:5000/register
+- **Login**: http://localhost:5000/login
+- **Health Check**: http://localhost:5000/health
 
 ## Project Structure
 
 ```
-password-manager/
-├── app.py                 # Flask application
+DEVSECOPSv2/
+├── app.py                 # Main Flask application
 ├── requirements.txt       # Python dependencies
-├── .env.example          # Environment variables template
+├── env.example           # Environment variables template
+├── .gitignore            # Git ignore file
+├── README.md             # This file
 ├── templates/            # HTML templates
 │   ├── base.html
+│   ├── index.html
 │   ├── login.html
 │   ├── register.html
 │   └── dashboard.html
-├── static/               # Static files
-│   ├── css/
-│   │   └── style.css
-│   └── js/
-│       ├── main.js
-│       └── dashboard.js
-└── README.md
+└── static/               # Static files
+    ├── css/
+    │   └── style.css
+    └── js/
+        ├── dashboard.js
+        └── main.js
 ```
 
-## DynamoDB Tables
+## How It Works
 
-### PasswordManager-Users
-- **Primary Key**: `username` (String)
-- **Attributes**: 
-  - `user_id` (String)
-  - `email` (String)
-  - `email_lower` (String)
-  - `password_hash` (String)
-  - `totp_secret` (String)
-  - `totp_enabled` (Boolean)
-  - `encryption_key` (String)
-  - `recovery_phrase_hash` (String)
-  - `created_at` (String)
+### User Registration
+1. User registers with username and password
+2. Password is hashed using bcrypt
+3. User record is stored in DynamoDB `PasswordManagerV2-Users` table
 
-### PasswordManager-Passwords
-- **Primary Key**: 
-  - `password_id` (String) - Partition Key
-  - `user_id` (String) - Sort Key
-- **Attributes**:
-  - `website` (String)
-  - `username` (String)
-  - `encrypted_password` (String)
-  - `notes` (String)
-  - `created_at` (String)
+### Password Storage
+1. User logs in with username/password
+2. Encryption key is generated from user_id + password
+3. When storing a password:
+   - Password is encrypted using Fernet encryption
+   - Encrypted password is stored in DynamoDB `PasswordManagerV2-Passwords` table
+4. When retrieving passwords:
+   - Encrypted passwords are decrypted using the same key
+   - Plain text passwords are displayed (only after login)
 
-## Security Features
+### DynamoDB Tables
 
-- **Password Hashing**: Uses bcrypt for secure password hashing
-- **Encryption Key**: Each user has a dedicated Fernet encryption key (password resets do not affect stored data)
-- **Two-Factor Authentication**: Google Authenticator (TOTP) required at registration and login
-- **Recovery Phrase**: Five recovery words hashed and stored for account recovery
-- **Session Management**: Flask sessions for user authentication
+**PasswordManagerV2-Users**
+- Primary Key: `username` (String)
+- Attributes: `user_id`, `password_hash`, `created_at`
 
-## Configuration
+**PasswordManagerV2-Passwords**
+- Primary Key: `user_id` (String) + `password_id` (String)
+- Attributes: `website`, `username`, `encrypted_password`, `notes`, `created_at`
 
-### Environment Variables
+## Security Notes
 
-- `FLASK_ENV`: Flask environment (development/production)
-- `SESSION_SECRET`: Secret key for Flask sessions (required in production)
-- `PORT`: Port to run the application on (default: 5000)
-- `AWS_ACCESS_KEY_ID`: AWS access key (required)
-- `AWS_SECRET_ACCESS_KEY`: AWS secret key (required)
-- `AWS_REGION`: AWS region (default: eu-north-1)
-- `AWS_ENDPOINT`: Optional endpoint for local DynamoDB
-- `DYNAMODB_USERS_TABLE`: Users table name (default: PasswordManager-Users)
-- `DYNAMODB_ACCOUNTS_TABLE`: Accounts table name (default: PasswordManager-Accounts)
-- `DYNAMODB_PASSWORDS_TABLE`: Passwords table name (default: PasswordManager-Passwords)
+- ✅ Passwords are encrypted before storing (Fernet encryption)
+- ✅ User passwords are hashed (bcrypt)
+- ✅ Encryption key is derived from user credentials
+- ⚠️ Session stores password temporarily (for encryption key generation)
+- ⚠️ For production, consider using proper session management
 
-## Local DynamoDB (Optional)
+## Development
 
-To use DynamoDB Local for development:
+### Running in Development Mode
 
-1. Download DynamoDB Local from AWS
-2. Start DynamoDB Local:
-   ```bash
-   java -Djava.library.path=./DynamoDBLocal_lib -jar DynamoDBLocal.jar -sharedDb
-   ```
-3. Set `AWS_ENDPOINT=http://localhost:8000` in your `.env` file
+```bash
+export FLASK_ENV=development
+python app.py
+```
+
+### Health Check
+
+```bash
+curl http://localhost:5000/health
+# Returns: {"ok": true}
+```
 
 ## Troubleshooting
 
-### AWS Credentials Error (Docker)
-
-When running in Docker, make sure AWS credentials are passed to the container:
-- Use `--env-file .env` flag with a `.env` file containing credentials
-- Or pass credentials via `--env` flags
-- Or use `docker-compose up` which automatically loads `.env` file
+### AWS Credentials Error
 
 **Error**: `botocore.exceptions.NoCredentialsError: Unable to locate credentials`
-**Solution**: Ensure AWS credentials are provided to the Docker container via environment variables.
 
-### Table Creation Error
+**Solution**: Ensure AWS credentials are configured (see step 2)
 
-If tables already exist, the application will continue normally. If you see errors, check:
-- AWS credentials
-- IAM permissions for DynamoDB
-- Region configuration
+### DynamoDB Table Creation Error
+
+If tables already exist, the application will continue normally. The tables are created automatically on first run.
 
 ### Port Already in Use
 
@@ -301,11 +191,16 @@ Change the port in your `.env` file:
 PORT=5001
 ```
 
+## Next Steps
+
+- [ ] Add password reset functionality
+- [ ] Add email verification
+- [ ] Implement better session management
+- [ ] Add password strength indicators
+- [ ] Add search functionality
+- [ ] Deploy to production
+
 ## License
 
 MIT License
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
 

@@ -1,65 +1,35 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard - Password Manager{% endblock %}
+{% block title %}Dashboard - Password Manager V2{% endblock %}
 
 {% block content %}
 <div class="dashboard">
-    <header class="dashboard-header glass-card" data-animate="fade-up">
-        <div class="dashboard-title">
-            <h1>Welcome back, {{ username }}.</h1>
-            <p>All your credentials, seamlessly encrypted and always within reach.</p>
+    <header class="dashboard-header">
+        <div>
+            <h1>Welcome, {{ username }}!</h1>
+            <p>Manage your passwords securely</p>
         </div>
-        <div class="user-actions">
-            <a href="{{ url_for('logout') }}" class="btn btn-danger outline btn-small">Logout</a>
+        <div>
+            <a href="{{ url_for('logout') }}" class="btn btn-danger">Logout</a>
         </div>
     </header>
-
-    <section class="dashboard-hero glass-card" data-animate="fade">
-        <div class="hero-copy">
-            <h2>Security that feels effortless.</h2>
-            <p>VaultSphere keeps your secrets under lock & key with enterprise-grade encryption and intuitive control.</p>
-        </div>
-        <div class="hero-stats">
-            <div class="stat-chip">
-                <span class="stat-label">Protected Entries</span>
-                <span class="stat-value" id="password-count">—</span>
-            </div>
-            <div class="stat-chip">
-                <span class="stat-label">2FA Status</span>
-                <span class="stat-value">Active</span>
-            </div>
-            <div class="stat-chip">
-                <span class="stat-label">Recovery Phrase</span>
-                <span class="stat-value">Stored Securely</span>
-            </div>
-        </div>
-    </section>
     
-    <div class="passwords-section" id="passwords-section">
-        <div class="card glass-card" data-animate="fade-up">
+    <div class="passwords-section">
+        <div class="card">
             <div class="card-header">
                 <h2>Your Passwords</h2>
-                <div class="card-actions">
-                    <div class="search-wrap">
-                        <input
-                            type="search"
-                            id="password-search"
-                            placeholder="Search passwords…"
-                            aria-label="Search saved passwords">
-                    </div>
-                    <button id="add-password-btn" class="btn btn-primary">Add New Password</button>
-                </div>
+                <button id="add-password-btn" class="btn btn-primary">Add New Password</button>
             </div>
             
             <div id="passwords-list" class="passwords-list">
-                <!-- Passwords will be loaded here -->
+                <div class="loading">Loading passwords...</div>
             </div>
         </div>
     </div>
     
     <!-- Add/Edit Password Modal -->
     <div id="password-modal" class="modal" style="display: none;">
-        <div class="modal-content glass-card" data-animate="fade-up">
+        <div class="modal-content">
             <div class="modal-header">
                 <h2 id="modal-title">Add Password</h2>
                 <button class="close-btn" id="close-modal">&times;</button>
@@ -68,7 +38,7 @@
                 <input type="hidden" id="password-id">
                 
                 <div class="form-group">
-                    <label for="website">Website</label>
+                    <label for="website">Website/Service</label>
                     <input type="text" id="website" required>
                 </div>
                 
@@ -80,13 +50,6 @@
                 <div class="form-group">
                     <label for="password">Password</label>
                     <input type="password" id="password" required>
-                    <button type="button" class="btn-toggle-password" onclick="togglePasswordVisibility('password', this)">Show</button>
-                    <div class="password-strength" id="modal-password-strength">
-                        <div class="password-strength-bar">
-                            <span id="modal-password-strength-bar"></span>
-                        </div>
-                        <span id="modal-password-strength-text" class="password-strength-text">Strength: -</span>
-                    </div>
                 </div>
                 
                 <div class="form-group">
@@ -102,9 +65,7 @@
         </div>
     </div>
 </div>
-{% endblock %}
 
-{% block extra_js %}
 <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 {% endblock %}
 
