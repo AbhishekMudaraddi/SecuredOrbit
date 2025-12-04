@@ -1,4 +1,4 @@
-name: Test & Lint
+name: Test pipeline
 
 on:
   pull_request:
