@@ -25,15 +25,21 @@ load_dotenv()
 app = Flask(__name__)
 
 # Get SECRET_KEY from environment (required)
-secret_key = os.getenv('SECRET_KEY')
+# Try multiple methods to get SECRET_KEY
+secret_key = os.getenv('SECRET_KEY') or os.environ.get('SECRET_KEY')
+
 if not secret_key:
     # Provide helpful debugging information
     import sys
     print("ERROR: SECRET_KEY environment variable is not set!", file=sys.stderr)
-    print(f"Available environment variables: {list(os.environ.keys())}", file=sys.stderr)
+    print(f"Available environment variables: {sorted(list(os.environ.keys()))}", file=sys.stderr)
     print(f"SECRET_KEY value: {repr(os.getenv('SECRET_KEY'))}", file=sys.stderr)
-    raise ValueError("SECRET_KEY is required. Please set it in Elastic Beanstalk environment variables.")
+    print(f"FLASK_ENV: {os.getenv('FLASK_ENV')}", file=sys.stderr)
+    print(f"AWS_REGION: {os.getenv('AWS_REGION')}", file=sys.stderr)
+    raise ValueError("SECRET_KEY is required. Please set it in Elastic Beanstalk environment variables using: eb setenv SECRET_KEY=your-key -e secured-orbit-env")
+
 app.secret_key = secret_key
+# SECRET_KEY loaded successfully - app can now use Flask sessions
 
 # AWS Config
 AWS_REGION = os.getenv('AWS_REGION', 'us-east-1')
@@ -373,6 +379,13 @@ def login():
             
             user = response['Item']
             
+            # Validate user has required fields
+            if 'password_hash' not in user:
+                import traceback
+                print(f"ERROR: User {username} missing password_hash field", file=__import__('sys').stderr)
+                traceback.print_exc()
+                return render_template('login.html', error='Account data error. Please contact support.')
+            
             # Verify password
             if not check_password(user['password_hash'], password):
                 session.pop('login_username', None)
@@ -412,13 +425,27 @@ def login():
             session.pop('pending_password', None)
             
             # Set session
+            if 'user_id' not in user:
+                import traceback
+                print(f"ERROR: User {username} missing user_id field", file=__import__('sys').stderr)
+                traceback.print_exc()
+                return render_template('login.html', error='Account data error. Please contact support.')
+            
             session['user_id'] = user['user_id']
-            session['username'] = user['username']
+            session['username'] = user.get('username', username)
             session['user_password'] = password  # Store temporarily for encryption key
             
             return redirect(url_for('dashboard'))
         except ClientError as e:
-            return render_template('login.html', error=f'Database error: {str(e)}')
+            import traceback
+            print(f"Database error during login: {str(e)}", file=__import__('sys').stderr)
+            traceback.print_exc()
+            return render_template('login.html', error='Database error. Please try again later.')
+        except Exception as e:
+            import traceback
+            print(f"Unexpected error during login: {str(e)}", file=__import__('sys').stderr)
+            traceback.print_exc()
+            return render_template('login.html', error='An unexpected error occurred. Please try again.')
     
     return render_template('login.html')
 
