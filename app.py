@@ -1,35 +1,42 @@
-"""
-Password Manager V2 - Simple Flask Application with DynamoDB
-Stores encrypted passwords in DynamoDB
-"""
+
 import os
 import json
+import io
 import base64
 import hashlib
+import re
 from datetime import datetime
 from uuid import uuid4
+
+import pyotp
+import qrcode
 
 import boto3
 import bcrypt
 from botocore.exceptions import ClientError
-from boto3.dynamodb.conditions import Key
+from boto3.dynamodb.conditions import Key, Attr
 from cryptography.fernet import Fernet
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 from dotenv import load_dotenv
 
-# Load environment variables
+
 load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 
-# AWS Configuration
+# Get SECRET_KEY from environment (required)
+secret_key = os.getenv('SECRET_KEY')
+if not secret_key:
+    raise ValueError("SECRET_KEY is required.")
+app.secret_key = secret_key
+
+# AWS Config
 AWS_REGION = os.getenv('AWS_REGION', 'us-east-1')
 AWS_ENDPOINT = os.getenv('AWS_ENDPOINT', None)
 DYNAMODB_USERS_TABLE = os.getenv('DYNAMODB_USERS_TABLE', 'PasswordManagerV2-Users')
 DYNAMODB_PASSWORDS_TABLE = os.getenv('DYNAMODB_PASSWORDS_TABLE', 'PasswordManagerV2-Passwords')
 
-# Initialize DynamoDB client
+# DynamoDB 
 dynamodb_config = {
     'region_name': AWS_REGION
 }
@@ -39,7 +46,7 @@ if AWS_ENDPOINT:
 dynamodb = boto3.resource('dynamodb', **dynamodb_config)
 dynamodb_client = boto3.client('dynamodb', **dynamodb_config)
 
-# Get table references
+# Tables
 users_table = dynamodb.Table(DYNAMODB_USERS_TABLE)
 passwords_table = dynamodb.Table(DYNAMODB_PASSWORDS_TABLE)
 
@@ -53,9 +60,21 @@ def init_dynamodb_tables():
                 {'AttributeName': 'username', 'KeyType': 'HASH'}
             ],
             'AttributeDefinitions': [
-                {'AttributeName': 'username', 'AttributeType': 'S'}
+                {'AttributeName': 'username', 'AttributeType': 'S'},
+                {'AttributeName': 'email_lower', 'AttributeType': 'S'}
             ],
-            'BillingMode': 'PAY_PER_REQUEST'
+            'BillingMode': 'PAY_PER_REQUEST',
+            'GlobalSecondaryIndexes': [
+                {
+                    'IndexName': 'EmailIndex',
+                    'KeySchema': [
+                        {'AttributeName': 'email_lower', 'KeyType': 'HASH'}
+                    ],
+                    'Projection': {
+                        'ProjectionType': 'ALL'
+                    }
+                }
+            ]
         },
         {
             'TableName': DYNAMODB_PASSWORDS_TABLE,
@@ -116,6 +135,67 @@ def generate_id():
     return str(uuid4())
 
 
+def generate_totp_secret():
+    """Generate a TOTP secret"""
+    return pyotp.random_base32()
+
+
+def get_totp_uri(username, secret, issuer_name='Password Manager V2'):
+    """Generate TOTP provisioning URI for QR code"""
+    totp = pyotp.TOTP(secret)
+    return totp.provisioning_uri(
+        name=username,
+        issuer_name=issuer_name
+    )
+
+
+def generate_qr_code(uri):
+    """Generate QR code as base64 string"""
+    qr = qrcode.QRCode(version=1, box_size=10, border=5)
+    qr.add_data(uri)
+    qr.make(fit=True)
+    
+    img = qr.make_image(fill_color="black", back_color="white")
+    buffer = io.BytesIO()
+    img.save(buffer, format='PNG')
+    img_str = base64.b64encode(buffer.getvalue()).decode()
+    return f"data:image/png;base64,{img_str}"
+
+
+def verify_totp(secret, token):
+    """Verify TOTP token"""
+    totp = pyotp.TOTP(secret)
+    return totp.verify(token, valid_window=2)
+
+
+def is_valid_email(email):
+    """Validate email format"""
+    if not email:
+        return False
+    email_regex = r'^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'
+    return re.match(email_regex, email) is not None
+
+
+def email_exists(email_lower):
+    """Check if email is already registered"""
+    if not email_lower:
+        return False
+    try:
+        response = users_table.query(
+            IndexName='EmailIndex',
+            KeyConditionExpression=Key('email_lower').eq(email_lower)
+        )
+        return len(response.get('Items', [])) > 0
+    except ClientError as e:
+        if e.response['Error']['Code'] in ('ValidationException', 'ResourceNotFoundException'):
+            # If index doesn't exist yet, scan the table
+            scan_response = users_table.scan(
+                FilterExpression=Attr('email_lower').eq(email_lower)
+            )
+            return len(scan_response.get('Items', [])) > 0
+        raise
+
+
 # Routes
 @app.route('/')
 def index():
@@ -130,61 +210,201 @@ def register():
     """User registration"""
     if request.method == 'POST':
         username = request.form.get('username')
+        email = request.form.get('email', '').strip()
         password = request.form.get('password')
+        confirm_password = request.form.get('confirm_password')
         
-        if not username or not password:
-            return render_template('register.html', error='Please fill in all fields')
+        # Validate all fields are filled
+        if not username or not email or not password or not confirm_password:
+            return render_template('register.html', error='Please fill in all fields', username=username, email=email)
         
+        # Validate email format
+        if not is_valid_email(email):
+            return render_template('register.html', error='Please enter a valid email address', username=username, email=email)
+        
+        # Check password match
+        if password != confirm_password:
+            return render_template('register.html', error='Passwords do not match', username=username, email=email)
+        
+        # Validate password length
         if len(password) < 6:
-            return render_template('register.html', error='Password must be at least 6 characters')
+            return render_template('register.html', error='Password must be at least 6 characters', username=username, email=email)
         
         try:
-            # Check if user exists
+            email_lower = email.lower()
+            
+            # Check if email already exists
+            if email_exists(email_lower):
+                return render_template('register.html', error='Email is already registered', username=username, email=email)
+            
+            # Check if username exists
             response = users_table.get_item(Key={'username': username})
             if 'Item' in response:
-                return render_template('register.html', error='Username already exists')
+                return render_template('register.html', error='Username already exists', username=username, email=email)
             
-            # Create new user
-            user_id = generate_id()
-            users_table.put_item(Item={
-                'username': username,
-                'user_id': user_id,
-                'password_hash': hash_password(password),
-                'created_at': datetime.utcnow().isoformat()
-            })
+            # Generate TOTP secret
+            totp_secret = generate_totp_secret()
             
-            # Set session
-            session['user_id'] = user_id
-            session['username'] = username
-            session['user_password'] = password  # Store temporarily for encryption key
+            # Store registration data in session for TOTP setup
+            session['reg_username'] = username
+            session['reg_email'] = email
+            session['reg_email_lower'] = email_lower
+            session['reg_password'] = password
+            session['reg_totp_secret'] = totp_secret
             
-            return redirect(url_for('dashboard'))
+            # Redirect to TOTP setup
+            return redirect(url_for('setup_totp'))
         except ClientError as e:
             return render_template('register.html', error=f'Database error: {str(e)}')
     
     return render_template('register.html')
 
 
+@app.route('/setup-totp', methods=['GET', 'POST'])
+def setup_totp():
+    """TOTP setup page - step 2: Setup Google Authenticator"""
+    if 'reg_username' not in session or 'reg_totp_secret' not in session:
+        return redirect(url_for('register'))
+    
+    username = session['reg_username']
+    totp_secret = session['reg_totp_secret']
+    
+    if request.method == 'POST':
+        totp_token = request.form.get('totp_token')
+        
+        if not totp_token:
+            return render_template('setup_totp.html', 
+                                 username=username,
+                                 totp_secret=totp_secret,
+                                 error='Please enter the TOTP code')
+        
+        # Verify TOTP
+        if not verify_totp(totp_secret, totp_token):
+            return render_template('setup_totp.html', 
+                                 username=username,
+                                 totp_secret=totp_secret,
+                                 error='Invalid TOTP code. Please try again.')
+        
+        # TOTP verified, proceed to complete registration
+        return redirect(url_for('complete_registration'))
+    
+    # Generate QR code
+    totp_uri = get_totp_uri(username, totp_secret)
+    qr_code = generate_qr_code(totp_uri)
+    
+    return render_template('setup_totp.html', 
+                         username=username,
+                         totp_secret=totp_secret,
+                         qr_code=qr_code)
+
+
+@app.route('/complete-registration', methods=['GET'])
+def complete_registration():
+    """Complete registration - step 3: Save user to database"""
+    if 'reg_username' not in session or 'reg_password' not in session or 'reg_email' not in session:
+        return redirect(url_for('register'))
+    
+    username = session['reg_username']
+    email = session['reg_email']
+    email_lower = session.get('reg_email_lower', email.lower())
+    password = session['reg_password']
+    totp_secret = session.get('reg_totp_secret')
+    
+    try:
+        # Create new user
+        user_id = generate_id()
+        users_table.put_item(Item={
+            'username': username,
+            'user_id': user_id,
+            'email': email,
+            'email_lower': email_lower,
+            'password_hash': hash_password(password),
+            'totp_secret': totp_secret,
+            'totp_enabled': True,
+            'created_at': datetime.utcnow().isoformat()
+        })
+        
+        # Clear registration session
+        session.pop('reg_username', None)
+        session.pop('reg_password', None)
+        session.pop('reg_email', None)
+        session.pop('reg_email_lower', None)
+        session.pop('reg_totp_secret', None)
+        
+        # Set user session
+        session['user_id'] = user_id
+        session['username'] = username
+        session['user_password'] = password  # Store temporarily for encryption key
+        
+        return redirect(url_for('dashboard'))
+    except ClientError as e:
+        return render_template('register.html', error=f'Database error: {str(e)}')
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    """User login"""
+    """User login with TOTP verification"""
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
+        totp_token = request.form.get('totp_token')
+        stored_username = session.get('login_username')
+        stored_password = session.get('pending_password')
+        
+        # Use password stored in session during TOTP verification step
+        if (not password or password.strip() == '') and stored_username and stored_password and stored_username == username:
+            password = stored_password
         
         if not username or not password:
-            return render_template('login.html', error='Please fill in all fields')
+            return render_template('login.html', error='Please fill in all fields', username=username, totp_required=bool(stored_username))
         
         try:
             response = users_table.get_item(Key={'username': username})
             if 'Item' not in response:
+                # Clear any stored login session data
+                session.pop('login_username', None)
+                session.pop('pending_password', None)
                 return render_template('login.html', error='Invalid username or password')
             
             user = response['Item']
             
             # Verify password
             if not check_password(user['password_hash'], password):
+                session.pop('login_username', None)
+                session.pop('pending_password', None)
                 return render_template('login.html', error='Invalid username or password')
+            
+            # Check if TOTP is enabled
+            if user.get('totp_enabled', False):
+                if not totp_token:
+                    # Store username and password in session for TOTP verification
+                    session['login_username'] = username
+                    session['pending_password'] = password
+                    return render_template('login.html', 
+                                         username=username, 
+                                         totp_required=True)
+                
+                # When TOTP token is provided, use stored session credentials if available
+                if stored_username and stored_password:
+                    if stored_username != username or not check_password(user['password_hash'], stored_password):
+                        session.pop('login_username', None)
+                        session.pop('pending_password', None)
+                        return render_template('login.html', error='Session expired. Please login again.')
+                    # Use stored password
+                    password = stored_password
+                
+                # Verify TOTP
+                totp_secret = user.get('totp_secret')
+                if not totp_secret or not verify_totp(totp_secret, totp_token):
+                    return render_template('login.html', 
+                                         username=username, 
+                                         totp_required=True,
+                                         error='Invalid TOTP code. Please try again.')
+            
+            # Login successful
+            # Clear temporary login session
+            session.pop('login_username', None)
+            session.pop('pending_password', None)
             
             # Set session
             session['user_id'] = user['user_id']
@@ -196,6 +416,161 @@ def login():
             return render_template('login.html', error=f'Database error: {str(e)}')
     
     return render_template('login.html')
+
+
+@app.route('/forgot-password', methods=['GET', 'POST'])
+def forgot_password():
+    """Step 1: User enters username/email for password reset"""
+    if request.method == 'POST':
+        username_or_email = request.form.get('username_or_email', '').strip()
+        
+        if not username_or_email:
+            return render_template('forgot_password.html', error='Please enter your username or email')
+        
+        try:
+            # Try to find user by username first
+            user = None
+            response = users_table.get_item(Key={'username': username_or_email})
+            
+            if 'Item' in response:
+                user = response['Item']
+            else:
+                # Try to find by email
+                email_lower = username_or_email.lower()
+                try:
+                    email_response = users_table.query(
+                        IndexName='EmailIndex',
+                        KeyConditionExpression=Key('email_lower').eq(email_lower)
+                    )
+                    if email_response.get('Items'):
+                        user = email_response['Items'][0]
+                except ClientError:
+                    # If index doesn't exist, scan the table
+                    scan_response = users_table.scan(
+                        FilterExpression=Attr('email_lower').eq(email_lower)
+                    )
+                    if scan_response.get('Items'):
+                        user = scan_response['Items'][0]
+            
+            if not user:
+                # Don't reveal if user exists or not (security)
+                return render_template('forgot_password.html', 
+                                     message='If an account exists, you will be able to reset your password.')
+            
+            # Check if TOTP is enabled
+            if not user.get('totp_enabled', False):
+                return render_template('forgot_password.html', 
+                                     error='Password reset requires TOTP to be enabled. Please contact support.')
+            
+            # Store user info in session for next step
+            session['reset_username'] = user['username']
+            session['reset_user_id'] = user['user_id']
+            
+            return redirect(url_for('reset_password_verify'))
+            
+        except ClientError:
+            return render_template('forgot_password.html', error='An error occurred. Please try again.')
+    
+    return render_template('forgot_password.html')
+
+
+@app.route('/reset-password-verify', methods=['GET', 'POST'])
+def reset_password_verify():
+    """Step 2: User verifies TOTP code"""
+    if 'reset_username' not in session:
+        return redirect(url_for('forgot_password'))
+    
+    username = session['reset_username']
+    
+    if request.method == 'POST':
+        totp_token = request.form.get('totp_token')
+        
+        if not totp_token:
+            return render_template('reset_password_verify.html', 
+                                 username=username,
+                                 error='Please enter the TOTP code')
+        
+        try:
+            # Get user to verify TOTP
+            response = users_table.get_item(Key={'username': username})
+            if 'Item' not in response:
+                session.pop('reset_username', None)
+                session.pop('reset_user_id', None)
+                return redirect(url_for('forgot_password'))
+            
+            user = response['Item']
+            
+            # Verify TOTP
+            totp_secret = user.get('totp_secret')
+            if not totp_secret or not verify_totp(totp_secret, totp_token):
+                return render_template('reset_password_verify.html', 
+                                     username=username,
+                                     error='Invalid TOTP code. Please try again.')
+            
+            # TOTP verified, allow password reset
+            session['reset_verified'] = True
+            return redirect(url_for('reset_password'))
+            
+        except ClientError:
+            return render_template('reset_password_verify.html', 
+                                 username=username,
+                                 error='An error occurred. Please try again.')
+    
+    return render_template('reset_password_verify.html', username=username)
+
+
+@app.route('/reset-password', methods=['GET', 'POST'])
+def reset_password():
+    """Step 3: User sets new password"""
+    if 'reset_username' not in session or 'reset_verified' not in session:
+        return redirect(url_for('forgot_password'))
+    
+    username = session['reset_username']
+    user_id = session.get('reset_user_id')
+    
+    if request.method == 'POST':
+        password = request.form.get('password')
+        confirm_password = request.form.get('confirm_password')
+        
+        if not password or not confirm_password:
+            return render_template('reset_password.html', 
+                                 username=username,
+                                 error='Please fill in all fields')
+        
+        if password != confirm_password:
+            return render_template('reset_password.html', 
+                                 username=username,
+                                 error='Passwords do not match')
+        
+        if len(password) < 6:
+            return render_template('reset_password.html', 
+                                 username=username,
+                                 error='Password must be at least 6 characters')
+        
+        try:
+            # Update password in database
+            users_table.update_item(
+                Key={'username': username},
+                UpdateExpression='SET password_hash = :ph, updated_at = :upd',
+                ExpressionAttributeValues={
+                    ':ph': hash_password(password),
+                    ':upd': datetime.utcnow().isoformat()
+                }
+            )
+            
+            # Clear reset session
+            session.pop('reset_username', None)
+            session.pop('reset_user_id', None)
+            session.pop('reset_verified', None)
+            
+            return redirect(url_for('login'))
+            
+        except ClientError:
+            return render_template('reset_password.html', 
+                                 username=username,
+                                 error='Failed to reset password. Please try again.')
+    
+    return render_template('reset_password.html', username=username)
 
 
 @app.route('/logout')
@@ -366,9 +741,7 @@ def health():
 
 if __name__ == '__main__':
     # Initialize DynamoDB tables
-    print("🚀 Initializing DynamoDB tables...")
     init_dynamodb_tables()
-    print("✅ Starting Flask application...")
     port = int(os.getenv('PORT', 5000))
-    app.run(debug=True, host='0.0.0.0', port=port)
-
+    DEBUG_MODE = os.getenv("FLASK_DEBUG", "False").lower() == "true"
+    app.run(debug=DEBUG_MODE, host='0.0.0.0', port=port)

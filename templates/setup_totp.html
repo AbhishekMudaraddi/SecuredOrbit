@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}Setup TOTP - Password Manager V2{% endblock %}
+
+{% block content %}
+<div class="auth-container">
+    <div class="auth-card">
+        <h1>Setup Two-Factor Authentication</h1>
+        
+        {% if error %}
+        <div class="error-message">{{ error }}</div>
+        {% endif %}
+        
+        <div class="totp-setup">
+            <p>Scan this QR code with Google Authenticator:</p>
+            
+            <div class="qr-code-container">
+                <img src="{{ qr_code }}" alt="TOTP QR Code" class="qr-code">
+            </div>
+            
+            <p class="totp-info">
+                Or enter this secret manually: <code>{{ totp_secret }}</code>
+            </p>
+            
+            <form method="POST" action="{{ url_for('setup_totp') }}">
+                <div class="form-group">
+                    <label for="totp_token">Enter 6-digit code from Google Authenticator</label>
+                    <input type="text" id="totp_token" name="totp_token" 
+                           placeholder="000000" maxlength="6" 
+                           pattern="[0-9]{6}" required autofocus>
+                    <small>Open your Google Authenticator app and enter the 6-digit code</small>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">Verify & Complete Registration</button>
+            </form>
+        </div>
+        
+        <p class="auth-link">
+            <a href="{{ url_for('register') }}">← Back to Registration</a>
+        </p>
+    </div>
+</div>
+{% endblock %}
+
