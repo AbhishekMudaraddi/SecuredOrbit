@@ -438,9 +438,19 @@ def login():
             return redirect(url_for('dashboard'))
         except ClientError as e:
             import traceback
-            print(f"Database error during login: {str(e)}", file=__import__('sys').stderr)
+            error_code = e.response.get('Error', {}).get('Code', '')
+            error_message = str(e)
+            
+            print(f"Database error during login: {error_message}", file=__import__('sys').stderr)
             traceback.print_exc()
-            return render_template('login.html', error='Database error. Please try again later.')
+            
+            # Check for IAM/permission errors
+            if 'AccessDeniedException' in error_code or 'AccessDenied' in error_message:
+                print("CRITICAL: IAM permissions issue detected!", file=__import__('sys').stderr)
+                print("The EC2 instance role needs DynamoDB permissions.", file=__import__('sys').stderr)
+                return render_template('login.html', error='Configuration error. Please contact the administrator.')
+            else:
+                return render_template('login.html', error='Database error. Please try again later.')
         except Exception as e:
             import traceback
             print(f"Unexpected error during login: {str(e)}", file=__import__('sys').stderr)
