@@ -740,7 +740,7 @@ def health():
 
 
 if __name__ == '__main__':
-    # Initialize DynamoDB tables
+    # Initialize DynamoDB tables for local development
     init_dynamodb_tables()
     port = int(os.getenv('PORT', 5000))
     DEBUG_MODE = os.getenv("FLASK_DEBUG", "False").lower() == "true"

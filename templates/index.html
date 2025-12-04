@@ -1,18 +1,50 @@
 {% extends "base.html" %}
 
-{% block title %}Home - Password Manager V2{% endblock %}
+{% block title %}Secured Orbit - Secure Password Manager{% endblock %}
 
-{% block content %}
-<div class="auth-container">
-    <div class="auth-card">
-        <h1>🔐 Password Manager V2</h1>
-        <p class="subtitle">Store your passwords securely</p>
-        
-        <div class="auth-buttons">
-            <a href="{{ url_for('login') }}" class="btn btn-primary">Login</a>
-            <a href="{{ url_for('register') }}" class="btn btn-secondary">Register</a>
+{% block content_wrapper %}
+<div class="landing-page">
+    <!-- Hero Section -->
+    <div class="hero-section">
+        <div class="hero-content">
+            <div class="logo">
+                <h1 class="app-title">
+                    <span class="orbit-icon">🌐</span>
+                    Secured Orbit
+                </h1>
+                <p class="tagline">Your Passwords, Securely Orbiting in the Cloud</p>
+            </div>
+            
+            <div class="hero-description">
+                <p>Manage your passwords with military-grade encryption and two-factor authentication. Keep your digital life secure.</p>
+            </div>
+            
+            <!-- Feature Highlights -->
+            <div class="features-grid">
+                <div class="feature-item">
+                    <h3>Encrypted Storage</h3>
+                    <p>All passwords encrypted before storage</p>
+                </div>
+                <div class="feature-item">
+                    <h3>2FA Protection</h3>
+                    <p>Google Authenticator support</p>
+                </div>
+                <div class="feature-item">
+                    <h3>Fast & Secure</h3>
+                    <p>Quick access, maximum security</p>
+                </div>
+            </div>
+            
+            <!-- CTA Buttons -->
+            <div class="cta-buttons">
+                <a href="{{ url_for('register') }}" class="btn btn-primary btn-large">
+                    Get Started
+                </a>
+                <a href="{{ url_for('login') }}" class="btn btn-secondary btn-large">
+                    Login
+                </a>
+            </div>
         </div>
     </div>
 </div>
 {% endblock %}
-
