@@ -72,6 +72,20 @@ jobs:
         EB_ENV_NAME: secured-orbit-env
         AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
       run: |
-        eb init -p python-3.11 $EB_APP_NAME --region $AWS_REGION --non-interactive
-        eb use $EB_ENV_NAME
+        # Create .elasticbeanstalk directory structure
+        mkdir -p .elasticbeanstalk
+        
+        # Create config.yml file for EB CLI
+        cat > .elasticbeanstalk/config.yml << EOF
+        branch-defaults:
+          default:
+            environment: $EB_ENV_NAME
+        global:
+          application_name: $EB_APP_NAME
+          default_region: $AWS_REGION
+          profile: null
+          sc: git
+        EOF
+        
+        # Deploy to Elastic Beanstalk
         eb deploy $EB_ENV_NAME --timeout 20
