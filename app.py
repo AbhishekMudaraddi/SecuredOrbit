@@ -27,7 +27,12 @@ app = Flask(__name__)
 # Get SECRET_KEY from environment (required)
 secret_key = os.getenv('SECRET_KEY')
 if not secret_key:
-    raise ValueError("SECRET_KEY is required.")
+    # Provide helpful debugging information
+    import sys
+    print("ERROR: SECRET_KEY environment variable is not set!", file=sys.stderr)
+    print(f"Available environment variables: {list(os.environ.keys())}", file=sys.stderr)
+    print(f"SECRET_KEY value: {repr(os.getenv('SECRET_KEY'))}", file=sys.stderr)
+    raise ValueError("SECRET_KEY is required. Please set it in Elastic Beanstalk environment variables.")
 app.secret_key = secret_key
 
 # AWS Config
