@@ -1,4 +1,4 @@
-name: Test Pipeline
+name: Test pipeline
 
 on:
   pull_request:
@@ -13,7 +13,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    
+
     env:
       # Set test environment variables so app can import
       SECRET_KEY: 'test-secret-key-for-ci-cd-pipeline-only'
