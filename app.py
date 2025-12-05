@@ -206,8 +206,15 @@ def encrypt_password(password_text, encryption_key):
 
 def decrypt_password(encrypted_password, encryption_key):
     """Decrypt password using Fernet"""
-    f = Fernet(encryption_key)
-    return f.decrypt(encrypted_password.encode('utf-8')).decode('utf-8')
+    try:
+        f = Fernet(encryption_key)
+        return f.decrypt(encrypted_password.encode('utf-8')).decode('utf-8')
+    except Exception as e:
+        # Provide more helpful error message
+        error_msg = str(e)
+        if 'did not match' in error_msg or 'InvalidToken' in error_msg:
+            raise ValueError("Unable to decrypt password. This may happen if your login password was changed or encryption key is invalid.")
+        raise
 
 
 def generate_id():
@@ -702,6 +709,111 @@ def dashboard():
         return redirect(url_for('login'))
     return render_template('dashboard.html', username=session.get('username'))
 
+
+@app.route('/api/passwords', methods=['GET'])
+def get_passwords():
+    """Get all passwords for the current user"""
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authenticated. Please log in again.'}), 401
+    
+    if 'user_password' not in session:
+        return jsonify({'error': 'Session expired. Please log in again.'}), 401
+    
+    user_id = session['user_id']
+    
+    try:
+        encryption_key = get_encryption_key(user_id, session['user_password'])
+    except Exception as e:
+        return jsonify({'error': f'Error generating encryption key: {str(e)}'}), 500
+    
+    try:
+        result = []
+        response = passwords_table.query(
+            KeyConditionExpression=Key('user_id').eq(user_id)
+        )
+        
+        items = response.get('Items', [])
+        if not items:
+            return jsonify({'passwords': []})
+        
+        decryption_errors = []
+        for item in items:
+            try:
+                encrypted_pwd = item.get('encrypted_password')
+                if not encrypted_pwd:
+                    continue  # Skip items without encrypted_password
+                
+                decrypted_password = decrypt_password(encrypted_pwd, encryption_key)
+                result.append({
+                    'id': item['password_id'],
+                    'website': item.get('website', ''),
+                    'username': item.get('username', ''),
+                    'password': decrypted_password,
+                    'notes': item.get('notes', ''),
+                    'created_at': item.get('created_at', '')
+                })
+            except ValueError as e:
+                # Password can't be decrypted - likely wrong encryption key
+                decryption_errors.append(item.get('password_id', 'unknown'))
+                continue
+            except Exception as e:
+                # Other decryption errors
+                error_msg = str(e)
+                if 'did not match' in error_msg or 'InvalidToken' in error_msg:
+                    decryption_errors.append(item.get('password_id', 'unknown'))
+                continue
+        
+        # If we have passwords but all failed to decrypt, return error
+        if items and not result:
+            return jsonify({
+                'error': 'Unable to decrypt passwords. This may happen if your login password was changed. Please contact support.',
+                'passwords': []
+            }), 500
+        
+        return jsonify({'passwords': result})
+    except ClientError as e:
+        return jsonify({'error': f'Database error: {str(e)}'}), 500
+    except Exception as e:
+        return jsonify({'error': f'Unexpected error: {str(e)}'}), 500
+
+
+@app.route('/api/passwords', methods=['POST'])
+def add_password():
+    """Add a new password"""
+    if 'user_id' not in session or 'user_password' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+    
+    data = request.get_json()
+    website = data.get('website')
+    username = data.get('username')
+    password = data.get('password')
+    notes = data.get('notes')
+    
+    if not website or not password:
+        return jsonify({'error': 'Website and password are required'}), 400
+    
+    user_id = session['user_id']
+    encryption_key = get_encryption_key(user_id, session['user_password'])
+    
+    try:
+        encrypted_password = encrypt_password(password, encryption_key)
+        password_id = generate_id()
+        
+        passwords_table.put_item(Item={
+            'user_id': user_id,
+            'password_id': password_id,
+            'website': website,
+            'username': username or '',
+            'encrypted_password': encrypted_password,
+            'notes': notes or '',
+            'created_at': datetime.utcnow().isoformat()
+        })
+        
+        return jsonify({'message': 'Password added successfully', 'id': password_id}), 201
+    except ClientError as e:
+        return jsonify({'error': str(e)}), 500
+    except Exception as e:
+        return jsonify({'error': f'Unexpected error: {str(e)}'}), 500
 
 
 @app.route('/api/passwords/<password_id>', methods=['DELETE'])
