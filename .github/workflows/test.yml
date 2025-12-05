@@ -74,6 +74,8 @@ jobs:
     env:
       SECRET_KEY: 'test-secret-key-for-zap-scan'
       AWS_REGION: 'us-east-1'
+      AWS_ACCESS_KEY_ID: 'test-access-key'
+      AWS_SECRET_ACCESS_KEY: 'test-secret-key'
       DYNAMODB_USERS_TABLE: 'PasswordManagerV2-Users-Test'
       DYNAMODB_PASSWORDS_TABLE: 'PasswordManagerV2-Passwords-Test'
       FLASK_DEBUG: 'false'
@@ -105,9 +107,46 @@ jobs:
         echo $! > flask.pid
         echo "⏳ Waiting for Flask app to start..."
         sleep 10
-        timeout 30 bash -c 'until curl -f http://localhost:5000/health; do echo "Waiting..."; sleep 2; done' || exit 1
-        echo "✅ Flask app is running on http://localhost:5000"
-        curl http://localhost:5000/health
+        
+        # Check if Flask process is still running
+        if ! kill -0 $(cat flask.pid) 2>/dev/null; then
+          echo "❌ Flask app process died. Showing logs:"
+          cat flask.log
+          exit 1
+        fi
+        
+        # Try to connect to health endpoint with better error handling
+        echo "Checking health endpoint..."
+        for i in {1..15}; do
+          if curl -f http://localhost:5000/health > /dev/null 2>&1; then
+            echo "✅ Flask app is running on http://localhost:5000"
+            curl http://localhost:5000/health
+            exit 0
+          fi
+          echo "Attempt $i/15: Flask not ready yet, waiting..."
+          sleep 2
+          
+          # Check if process is still running
+          if ! kill -0 $(cat flask.pid) 2>/dev/null; then
+            echo "❌ Flask app process died. Showing logs:"
+            cat flask.log
+            exit 1
+          fi
+        done
+        
+        echo "❌ Flask app failed to start after 30 seconds. Showing logs:"
+        cat flask.log
+        exit 1
+    
+    # Step 4.5: Show Flask logs if startup failed
+    - name: Debug Flask startup
+      if: failure()
+      run: |
+        echo "📋 Flask application logs:"
+        cat flask.log || echo "No flask.log file found"
+        echo ""
+        echo "📋 Checking if Flask process is running:"
+        ps aux | grep python || echo "No Python processes found"
     
     # Step 5: Run ZAP Baseline Scan (THE MAGIC HAPPENS HERE)
     - name: ZAP Baseline Scan
@@ -137,6 +176,16 @@ jobs:
           report_json.json    # Machine-readable report
           report_xml.xml      # CI/CD integration report
         retention-days: 30    # Keep reports for 30 days
+    
+    # Step 8: Upload Flask logs for debugging
+    - name: Upload Flask logs
+      uses: actions/upload-artifact@v4
+      if: always()  # Upload even if scan fails
+      with:
+        name: flask-debug-logs
+        path: |
+          flask.log
+        retention-days: 7    # Keep logs for 7 days for debugging
 
   sonarcloud:
     name: SonarCloud Analysis

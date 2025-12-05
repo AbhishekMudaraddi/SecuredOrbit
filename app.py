@@ -632,77 +632,6 @@ def dashboard():
     return render_template('dashboard.html', username=session.get('username'))
 
 
-@app.route('/api/passwords', methods=['GET'])
-def get_passwords():
-    """Get all passwords for the current user"""
-    if 'user_id' not in session or 'user_password' not in session:
-        return jsonify({'error': 'Not authenticated'}), 401
-    
-    user_id = session['user_id']
-    encryption_key = get_encryption_key(user_id, session['user_password'])
-    
-    try:
-        result = []
-        response = passwords_table.query(
-            KeyConditionExpression=Key('user_id').eq(user_id)
-        )
-        
-        for item in response.get('Items', []):
-            try:
-                decrypted_password = decrypt_password(item['encrypted_password'], encryption_key)
-                result.append({
-                    'id': item['password_id'],
-                    'website': item.get('website', ''),
-                    'username': item.get('username', ''),
-                    'password': decrypted_password,
-                    'notes': item.get('notes', ''),
-                    'created_at': item.get('created_at', '')
-                })
-            except Exception as e:
-                print(f"Error decrypting password: {e}")
-                continue
-        
-        return jsonify({'passwords': result})
-    except ClientError as e:
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/passwords', methods=['POST'])
-def add_password():
-    """Add a new password"""
-    if 'user_id' not in session or 'user_password' not in session:
-        return jsonify({'error': 'Not authenticated'}), 401
-    
-    data = request.get_json()
-    website = data.get('website')
-    username = data.get('username')
-    password = data.get('password')
-    notes = data.get('notes')
-    
-    if not website or not password:
-        return jsonify({'error': 'Website and password are required'}), 400
-    
-    user_id = session['user_id']
-    encryption_key = get_encryption_key(user_id, session['user_password'])
-    
-    try:
-        encrypted_password = encrypt_password(password, encryption_key)
-        password_id = generate_id()
-        
-        passwords_table.put_item(Item={
-            'user_id': user_id,
-            'password_id': password_id,
-            'website': website,
-            'username': username or '',
-            'encrypted_password': encrypted_password,
-            'notes': notes or '',
-            'created_at': datetime.utcnow().isoformat()
-        })
-        
-        return jsonify({'message': 'Password added successfully', 'id': password_id}), 201
-    except ClientError as e:
-        return jsonify({'error': str(e)}), 500
-
 
 @app.route('/api/passwords/<password_id>', methods=['DELETE'])
 def delete_password(password_id):
@@ -784,8 +713,13 @@ def health():
 
 
 if __name__ == '__main__':
-    # Initialize DynamoDB tables for local development
-    init_dynamodb_tables()
+    # Initialize DynamoDB tables for local development (non-blocking)
+    try:
+        init_dynamodb_tables()
+    except Exception as e:
+        print(f"⚠️  Warning: DynamoDB initialization failed (non-critical): {e}")
+        print("ℹ️  Application will continue to run, but database features may not work.")
+    
     port = int(os.getenv('PORT', 5000))
     DEBUG_MODE = os.getenv("FLASK_DEBUG", "False").lower() == "true"
     app.run(debug=DEBUG_MODE, host='0.0.0.0', port=port)
