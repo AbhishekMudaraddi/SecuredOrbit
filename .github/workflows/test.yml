@@ -153,7 +153,6 @@ jobs:
       uses: zaproxy/action-baseline@v0.11.0
       with:
         target: 'http://localhost:5000'        # Your Flask app URL
-        rules_file_name: '.zap/rules.tsv'      # Optional: ignore certain alerts
         cmd_options: '-a'                       # Continue even if warnings found
     
     # Step 6: Clean up - stop Flask app
