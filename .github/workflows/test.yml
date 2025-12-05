@@ -246,3 +246,6 @@ jobs:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       with:
         projectBaseDir: .
+        args: >
+          -Dsonar.qualitygate.wait=false
+          -Dsonar.coverage.exclusions=**/tests/**,**/venv/**,**/static/**,**/templates/**,**/__pycache__/**

@@ -763,7 +763,7 @@ def get_passwords():
                     decryption_errors.append(item.get('password_id', 'unknown'))
                 continue
         
-        # If we have passwords but all failed to decrypt, return error
+        
         if items and not result:
             return jsonify({
                 'error': 'Unable to decrypt passwords. This may happen if your login password was changed. Please contact support.',
