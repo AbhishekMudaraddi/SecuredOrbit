@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     
     env:
-      SECRET_KEY: ${{ secrets.SECRET_KEY }}
+      SECRET_KEY: 'secret-key-for-testing'
       AWS_REGION: 'us-east-1'
       DYNAMODB_USERS_TABLE: 'PasswordManagerV2-Users-Test'
       DYNAMODB_PASSWORDS_TABLE: 'PasswordManagerV2-Passwords-Test'
@@ -22,7 +22,7 @@ jobs:
     
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0
     
@@ -82,7 +82,7 @@ jobs:
     steps:
     # Step 1: Get your code
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
     
     # Step 2: Set up Python environment
     - name: Set up Python
@@ -128,7 +128,7 @@ jobs:
     
     # Step 7: Save reports for later viewing
     - name: Upload ZAP reports
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()  # Upload even if scan fails
       with:
         name: zap-security-reports
@@ -145,7 +145,7 @@ jobs:
     
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0
     

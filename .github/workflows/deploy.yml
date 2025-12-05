@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     
     env:
-      SECRET_KEY: 'test-secret-key-for-ci-cd-pipeline-only'
+      SECRET_KEY: 'secret-key-for-deployment'
       AWS_REGION: 'us-east-1'
       DYNAMODB_USERS_TABLE: 'PasswordManagerV2-Users-Test'
       DYNAMODB_PASSWORDS_TABLE: 'PasswordManagerV2-Passwords-Test'
