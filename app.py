@@ -116,6 +116,12 @@ users_table = dynamodb.Table(DYNAMODB_USERS_TABLE)
 passwords_table = dynamodb.Table(DYNAMODB_PASSWORDS_TABLE)
 
 
+def is_ci_cd_mode():
+    """Check if running in CI/CD environment with test credentials"""
+    aws_key = os.getenv('AWS_ACCESS_KEY_ID', '')
+    return aws_key in ('test-access-key', '') or os.getenv('CI') == 'true' or os.getenv('GITHUB_ACTIONS') == 'true'
+
+
 def init_dynamodb_tables():
     """Initialize DynamoDB tables if they don't exist"""
     tables = [
@@ -160,10 +166,19 @@ def init_dynamodb_tables():
             dynamodb_client.create_table(**table_def)
             print(f"✅ Created table: {table_def['TableName']}")
         except ClientError as e:
-            if e.response['Error']['Code'] == 'ResourceInUseException':
+            error_code = e.response['Error']['Code']
+            if error_code == 'ResourceInUseException':
                 print(f"ℹ️  Table {table_def['TableName']} already exists")
+            elif error_code == 'UnrecognizedClientException' and is_ci_cd_mode():
+                # Suppress credential errors in CI/CD - expected when using test credentials
+                if not hasattr(init_dynamodb_tables, '_ci_warned'):
+                    print(f"ℹ️  Skipping DynamoDB table creation in CI/CD mode (test credentials - expected for security scanning)")
+                    init_dynamodb_tables._ci_warned = True
             else:
-                print(f"⚠️  Error creating table {table_def['TableName']}: {e}")
+                if is_ci_cd_mode():
+                    print(f"⚠️  Database unavailable in CI/CD mode (expected for security scanning)")
+                else:
+                    print(f"⚠️  Error creating table {table_def['TableName']}: {e}")
 
 
 def hash_password(password):
@@ -493,14 +508,20 @@ def login():
             error_code = e.response.get('Error', {}).get('Code', '')
             error_message = str(e)
             
-            print(f"Database error during login: {error_message}", file=__import__('sys').stderr)
-            traceback.print_exc()
+            # Suppress verbose errors in CI/CD mode
+            if not is_ci_cd_mode():
+                print(f"Database error during login: {error_message}", file=__import__('sys').stderr)
+                traceback.print_exc()
             
             # Check for IAM/permission errors
             if 'AccessDeniedException' in error_code or 'AccessDenied' in error_message:
-                print("CRITICAL: IAM permissions issue detected!", file=__import__('sys').stderr)
-                print("The EC2 instance role needs DynamoDB permissions.", file=__import__('sys').stderr)
+                if not is_ci_cd_mode():
+                    print("CRITICAL: IAM permissions issue detected!", file=__import__('sys').stderr)
+                    print("The EC2 instance role needs DynamoDB permissions.", file=__import__('sys').stderr)
                 return render_template('login.html', error='Configuration error. Please contact the administrator.')
+            elif error_code == 'UnrecognizedClientException' and is_ci_cd_mode():
+                # In CI/CD mode, just show a generic error without verbose logging
+                return render_template('login.html', error='Service temporarily unavailable. Please try again later.')
             else:
                 return render_template('login.html', error='Database error. Please try again later.')
         except Exception as e:
