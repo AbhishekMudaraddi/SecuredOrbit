@@ -191,7 +191,7 @@ jobs:
         retention-days: 7    # Keep logs for 7 days for debugging
 
   sonarcloud:
-    name: SonarCloud Analysis
+    name: SonarCloud Static Analysis
     runs-on: ubuntu-latest
     needs: test
     
@@ -199,44 +199,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       with:
-        fetch-depth: 0  # Shallow clones should be disabled for better analysis
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-        cache: 'pip'
-    
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pytest pytest-cov
-    
-    - name: Run tests with coverage for SonarQube
-      env:
-        SECRET_KEY: 'test-secret-key-for-testing-only'
-        AWS_REGION: 'us-east-1'
-        AWS_ACCESS_KEY_ID: 'test-access-key'
-        AWS_SECRET_ACCESS_KEY: 'test-secret-key'
-        DYNAMODB_USERS_TABLE: 'PasswordManagerV2-Users-Test'
-        DYNAMODB_PASSWORDS_TABLE: 'PasswordManagerV2-Passwords-Test'
-        FLASK_DEBUG: 'false'
-        PORT: '5000'
-      run: |
-        pytest tests/ -v --cov=app --cov-report=xml --cov-report=term --cov-branch || true
-      continue-on-error: true
-    
-    - name: Check coverage file
-      run: |
-        if [ -f coverage.xml ]; then
-          echo "✅ Coverage file generated"
-          ls -lh coverage.xml
-          echo "First 20 lines of coverage.xml:"
-          head -20 coverage.xml
-        else
-          echo "❌ Coverage file not found"
-        fi
+        fetch-depth: 0
     
     - name: SonarCloud Scan
       uses: SonarSource/sonarqube-scan-action@v5.0.0
@@ -248,4 +211,3 @@ jobs:
         projectBaseDir: .
         args: >
           -Dsonar.qualitygate.wait=false
-          -Dsonar.coverage.exclusions=**/tests/**,**/venv/**,**/static/**,**/templates/**,**/__pycache__/**
