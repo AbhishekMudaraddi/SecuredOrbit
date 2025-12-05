@@ -218,15 +218,13 @@ jobs:
         pytest tests/ -v --cov=app --cov-report=xml --cov-report=term || true
       continue-on-error: true
     
-    - name: Check if coverage file exists
+    - name: Ensure coverage file exists
       run: |
-        if [ -f coverage.xml ]; then
-          echo "✅ Coverage file found"
-          ls -lh coverage.xml
-        else
-          echo "⚠️ Coverage file not found - creating empty one to prevent SonarCloud error"
-          echo '<?xml version="1.0" ?><coverage><sources><source>.</source></sources><packages></packages></coverage>' > coverage.xml
+        if [ ! -f coverage.xml ]; then
+          echo "Creating minimal coverage.xml"
+          echo '<?xml version="1.0"?><coverage><sources><source>.</source></sources><packages></packages></coverage>' > coverage.xml
         fi
+        ls -lh coverage.xml || echo "Coverage file check complete"
     
     - name: SonarCloud Scan
       uses: SonarSource/sonarqube-scan-action@v5.0.0
@@ -236,8 +234,3 @@ jobs:
         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
       with:
         projectBaseDir: .
-    
-    - name: Check SonarCloud Quality Gate status
-      if: always()
-      run: |
-        echo "SonarCloud analysis completed. Check the dashboard for detailed results."
