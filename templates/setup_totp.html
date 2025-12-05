@@ -23,6 +23,7 @@
             </p>
             
             <form method="POST" action="{{ url_for('setup_totp') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                 <div class="form-group">
                     <label for="totp_token">Enter 6-digit code from Google Authenticator</label>
                     <input type="text" id="totp_token" name="totp_token" 

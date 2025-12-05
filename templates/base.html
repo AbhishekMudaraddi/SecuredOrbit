@@ -13,6 +13,10 @@
         {% block content %}{% endblock %}
     </div>
     {% endblock %}
+    {# CSRF Token for AJAX requests #}
+    <script>
+        window.csrfToken = "{{ csrf_token() }}";
+    </script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>

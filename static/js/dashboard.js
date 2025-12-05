@@ -152,7 +152,8 @@ async function handleFormSubmit(e) {
         const response = await fetch(url, {
             method: method,
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'X-CSRFToken': window.csrfToken || ''
             },
             body: JSON.stringify(data)
         });
@@ -183,7 +184,10 @@ async function deletePassword(passwordId) {
     
     try {
         const response = await fetch(`/api/passwords/${passwordId}`, {
-            method: 'DELETE'
+            method: 'DELETE',
+            headers: {
+                'X-CSRFToken': window.csrfToken || ''
+            }
         });
         
         if (!response.ok) {

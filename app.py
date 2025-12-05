@@ -8,6 +8,9 @@ import re
 from datetime import datetime
 from uuid import uuid4
 
+
+from flask_wtf import CSRFProtect
+
 import pyotp
 import qrcode
 
@@ -24,12 +27,12 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# Get SECRET_KEY from environment (required)
-# Try multiple methods to get SECRET_KEY
+
 secret_key = os.getenv('SECRET_KEY') or os.environ.get('SECRET_KEY')
 
+
 if not secret_key:
-    # Provide helpful debugging information
+ 
     import sys
     print("ERROR: SECRET_KEY environment variable is not set!", file=sys.stderr)
     print(f"Available environment variables: {sorted(list(os.environ.keys()))}", file=sys.stderr)
@@ -39,8 +42,9 @@ if not secret_key:
     raise ValueError("SECRET_KEY is required. Please set it in Elastic Beanstalk environment variables using: eb setenv SECRET_KEY=your-key -e secured-orbit-env")
 
 app.secret_key = secret_key
-# SECRET_KEY loaded successfully - app can now use Flask sessions
 
+
+csrf = CSRFProtect(app)
 # AWS Config
 AWS_REGION = os.getenv('AWS_REGION', 'us-east-1')
 AWS_ENDPOINT = os.getenv('AWS_ENDPOINT', None)
@@ -225,45 +229,43 @@ def register():
         password = request.form.get('password')
         confirm_password = request.form.get('confirm_password')
         
-        # Validate all fields are filled
+        # Validate 
         if not username or not email or not password or not confirm_password:
             return render_template('register.html', error='Please fill in all fields', username=username, email=email)
-        
-        # Validate email format
+       
         if not is_valid_email(email):
             return render_template('register.html', error='Please enter a valid email address', username=username, email=email)
         
-        # Check password match
+        # Check password 
         if password != confirm_password:
             return render_template('register.html', error='Passwords do not match', username=username, email=email)
         
-        # Validate password length
+        # Validate 
         if len(password) < 6:
             return render_template('register.html', error='Password must be at least 6 characters', username=username, email=email)
         
         try:
             email_lower = email.lower()
             
-            # Check if email already exists
+            #  mail exist or no 
             if email_exists(email_lower):
                 return render_template('register.html', error='Email is already registered', username=username, email=email)
             
-            # Check if username exists
+            #  usernme exist or no 
             response = users_table.get_item(Key={'username': username})
             if 'Item' in response:
                 return render_template('register.html', error='Username already exists', username=username, email=email)
             
-            # Generate TOTP secret
+            # Generate TOTP 
             totp_secret = generate_totp_secret()
             
-            # Store registration data in session for TOTP setup
             session['reg_username'] = username
             session['reg_email'] = email
             session['reg_email_lower'] = email_lower
             session['reg_password'] = password
             session['reg_totp_secret'] = totp_secret
             
-            # Redirect to TOTP setup
+            # Redirect to TOTP 
             return redirect(url_for('setup_totp'))
         except ClientError as e:
             return render_template('register.html', error=f'Database error: {str(e)}')
@@ -631,6 +633,7 @@ def dashboard():
 
 
 @app.route('/api/passwords', methods=['GET'])
+@csrf.exempt  # Exempt GET requests from CSRF (they don't modify state)
 def get_passwords():
     """Get all passwords for the current user"""
     if 'user_id' not in session or 'user_password' not in session:
@@ -666,6 +669,7 @@ def get_passwords():
 
 
 @app.route('/api/passwords', methods=['POST'])
+@csrf.exempt  # API routes are authenticated via session, exempt from CSRF
 def add_password():
     """Add a new password"""
     if 'user_id' not in session or 'user_password' not in session:
@@ -703,6 +707,7 @@ def add_password():
 
 
 @app.route('/api/passwords/<password_id>', methods=['DELETE'])
+@csrf.exempt  # API routes are authenticated via session, exempt from CSRF
 def delete_password(password_id):
     """Delete a password"""
     if 'user_id' not in session:
@@ -723,6 +728,7 @@ def delete_password(password_id):
 
 
 @app.route('/api/passwords/<password_id>', methods=['PUT'])
+@csrf.exempt  # API routes are authenticated via session, exempt from CSRF
 def update_password(password_id):
     """Update a password"""
     if 'user_id' not in session or 'user_password' not in session:
