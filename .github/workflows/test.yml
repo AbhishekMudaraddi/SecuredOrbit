@@ -211,3 +211,5 @@ jobs:
         projectBaseDir: .
         args: >
           -Dsonar.qualitygate.wait=false
+          -Dsonar.coverage.exclusions=**/*
+          -Dsonar.python.coverage.reportPaths=
