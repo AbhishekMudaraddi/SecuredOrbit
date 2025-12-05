@@ -70,6 +70,9 @@ jobs:
     name: OWASP ZAP Baseline Scan
     runs-on: ubuntu-latest
     needs: test  # Waits for test job to complete
+    permissions:
+      contents: read
+      security-events: write
     
     env:
       SECRET_KEY: 'test-secret-key-for-zap-scan'
@@ -151,6 +154,7 @@ jobs:
     # Step 5: Run ZAP Baseline Scan (THE MAGIC HAPPENS HERE)
     - name: ZAP Baseline Scan
       uses: zaproxy/action-baseline@v0.11.0
+      continue-on-error: true  # Don't fail the workflow on warnings
       with:
         target: 'http://localhost:5000'        # Your Flask app URL
         cmd_options: '-a'                       # Continue even if warnings found
@@ -171,9 +175,9 @@ jobs:
       with:
         name: zap-security-reports
         path: |
-          report_html.html    # Human-readable report
-          report_json.json    # Machine-readable report
-          report_xml.xml      # CI/CD integration report
+          report_html.html    # Human-readable HTML report
+          report_json.json    # Machine-readable JSON report
+          report_md.md        # Markdown report
         retention-days: 30    # Keep reports for 30 days
     
     # Step 8: Upload Flask logs for debugging

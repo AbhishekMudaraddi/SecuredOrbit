@@ -43,8 +43,58 @@ if not secret_key:
 
 app.secret_key = secret_key
 
+# Configure session cookie security
+app.config['SESSION_COOKIE_SECURE'] = os.getenv('FLASK_ENV') == 'production'  # Only in production with HTTPS
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # CSRF protection while allowing navigation
+
 
 csrf = CSRFProtect(app)
+
+
+@app.after_request
+def set_security_headers(response):
+    """Add security headers to all responses"""
+    # Anti-clickjacking protection
+    response.headers['X-Frame-Options'] = 'DENY'
+    
+    # Prevent MIME type sniffing
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    
+    # Content Security Policy - allows same-origin and inline scripts/styles needed for Flask-WTF
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "font-src 'self'; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none';"
+    )
+    
+    # Permissions Policy (formerly Feature-Policy)
+    response.headers['Permissions-Policy'] = (
+        "geolocation=(), "
+        "microphone=(), "
+        "camera=(), "
+        "payment=(), "
+        "usb=()"
+    )
+    
+    # Strict Transport Security (HSTS) - only in production/HTTPS
+    # Uncomment when using HTTPS:
+    # response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    
+    # Referrer Policy
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    
+    # Remove server version information
+    # Note: Flask's development server will still show Werkzeug, but this helps
+    response.headers.pop('Server', None)
+    
+    return response
+
+
 # AWS Config
 AWS_REGION = os.getenv('AWS_REGION', 'us-east-1')
 AWS_ENDPOINT = os.getenv('AWS_ENDPOINT', None)
