@@ -3,14 +3,14 @@ name: Deploy Pipeline
 on:
   push:
     branches:
-      - main
+      - production
 
 jobs:
-  test:
+  validate:
+    name: Quick Validation
     runs-on: ubuntu-latest
-
+    
     env:
-      # Set test environment variables so app can import
       SECRET_KEY: 'test-secret-key-for-ci-cd-pipeline-only'
       AWS_REGION: 'us-east-1'
       DYNAMODB_USERS_TABLE: 'PasswordManagerV2-Users-Test'
@@ -43,7 +43,8 @@ jobs:
         pip check
 
   deploy:
-    needs: test
+    name: Deploy to AWS Elastic Beanstalk
+    needs: validate
     runs-on: ubuntu-latest
     
     steps:
