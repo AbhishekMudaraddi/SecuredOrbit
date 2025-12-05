@@ -633,7 +633,6 @@ def dashboard():
 
 
 @app.route('/api/passwords', methods=['GET'])
-@csrf.exempt  # Exempt GET requests from CSRF (they don't modify state)
 def get_passwords():
     """Get all passwords for the current user"""
     if 'user_id' not in session or 'user_password' not in session:
@@ -669,7 +668,6 @@ def get_passwords():
 
 
 @app.route('/api/passwords', methods=['POST'])
-@csrf.exempt  # API routes are authenticated via session, exempt from CSRF
 def add_password():
     """Add a new password"""
     if 'user_id' not in session or 'user_password' not in session:
@@ -707,7 +705,6 @@ def add_password():
 
 
 @app.route('/api/passwords/<password_id>', methods=['DELETE'])
-@csrf.exempt  # API routes are authenticated via session, exempt from CSRF
 def delete_password(password_id):
     """Delete a password"""
     if 'user_id' not in session:
@@ -728,7 +725,6 @@ def delete_password(password_id):
 
 
 @app.route('/api/passwords/<password_id>', methods=['PUT'])
-@csrf.exempt  # API routes are authenticated via session, exempt from CSRF
 def update_password(password_id):
     """Update a password"""
     if 'user_id' not in session or 'user_password' not in session:
