@@ -416,7 +416,7 @@ def complete_registration():
         session.pop('reg_email_lower', None)
         session.pop('reg_totp_secret', None)
         
-        # Set user session
+        # Set user details
         session['user_id'] = user_id
         session['username'] = username
         session['user_password'] = password  # Store temporarily for encryption key
