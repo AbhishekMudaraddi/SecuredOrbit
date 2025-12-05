@@ -5,8 +5,19 @@ import pytest
 import os
 import sys
 
+# Set environment variables BEFORE importing app
+os.environ['SECRET_KEY'] = 'test-secret-key-for-testing-only'
+os.environ['AWS_REGION'] = 'us-east-1'
+os.environ['DYNAMODB_USERS_TABLE'] = 'PasswordManagerV2-Users-Test'
+os.environ['DYNAMODB_PASSWORDS_TABLE'] = 'PasswordManagerV2-Passwords-Test'
+os.environ['AWS_ACCESS_KEY_ID'] = 'test-access-key'
+os.environ['AWS_SECRET_ACCESS_KEY'] = 'test-secret-key'
+
 # Add parent directory to path to import app
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+# Import app module to ensure it's loaded
+import app as app_module
 
 from app import (
     hash_password,
