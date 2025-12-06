@@ -52,6 +52,25 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # CSRF protection while allowing 
 csrf = CSRFProtect(app)
 
 
+@app.before_request
+def force_https():
+    """Force HTTPS redirect in production"""
+    # Skip HTTPS enforcement in development (allow HTTP for local testing)
+    if os.getenv('FLASK_ENV') != 'production':
+        return None
+    
+    # In Elastic Beanstalk/Load Balancer setup, check X-Forwarded-Proto header
+    # This header is set by the load balancer and tells us the original protocol
+    forwarded_proto = request.headers.get('X-Forwarded-Proto', '')
+    
+    # If request came through as HTTP, redirect to HTTPS
+    if forwarded_proto == 'http':
+        url = request.url.replace('http://', 'https://', 1)
+        return redirect(url, code=301)
+    
+    return None
+
+
 def add_no_cache_headers(response):
     """Add headers to prevent browser caching of sensitive pages"""
     response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
@@ -90,8 +109,9 @@ def set_security_headers(response):
     )
     
     # Strict Transport Security (HSTS) - only in production/HTTPS
-    # Uncomment when using HTTPS:
-    # response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    if os.getenv('FLASK_ENV') == 'production':
+        # Force HTTPS for 1 year, including subdomains
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains; preload'
     
     # Referrer Policy
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
