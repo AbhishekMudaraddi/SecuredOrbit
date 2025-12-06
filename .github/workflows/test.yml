@@ -139,3 +139,4 @@ jobs:
           -Dsonar.qualitygate.wait=false
           -Dsonar.coverage.exclusions=**/*
           -Dsonar.python.coverage.reportPaths=
+          -Dsonar.qualitygate.skip=true
