@@ -19,7 +19,7 @@ import bcrypt
 from botocore.exceptions import ClientError
 from boto3.dynamodb.conditions import Key, Attr
 from cryptography.fernet import Fernet
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, make_response
 from dotenv import load_dotenv
 
 
@@ -50,6 +50,14 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # CSRF protection while allowing 
 
 
 csrf = CSRFProtect(app)
+
+
+def add_no_cache_headers(response):
+    """Add headers to prevent browser caching of sensitive pages"""
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 
 @app.after_request
@@ -697,34 +705,59 @@ def reset_password():
 
 @app.route('/logout')
 def logout():
-    """Logout user"""
+    """Logout user - clears session and prevents back-button access"""
+    # Clear all session data
     session.clear()
-    return redirect(url_for('index'))
+    
+    # Create response with redirect
+    response = redirect(url_for('index'))
+    
+    # Add no-cache headers to prevent browser caching
+    response = add_no_cache_headers(response)
+    
+    # Delete the session cookie explicitly
+    response.set_cookie('session', '', expires=0, max_age=0)
+    
+    return response
 
 
 @app.route('/dashboard')
 def dashboard():
-    """Dashboard page"""
-    if 'user_id' not in session:
+    """Dashboard page - requires authentication"""
+    # Check authentication
+    if 'user_id' not in session or 'username' not in session:
         return redirect(url_for('login'))
-    return render_template('dashboard.html', username=session.get('username'))
+    
+    # Create response
+    response = make_response(render_template('dashboard.html', username=session.get('username')))
+    
+    # Add no-cache headers to prevent browser caching
+    response = add_no_cache_headers(response)
+    
+    return response
 
 
 @app.route('/api/passwords', methods=['GET'])
 def get_passwords():
     """Get all passwords for the current user"""
     if 'user_id' not in session:
-        return jsonify({'error': 'Not authenticated. Please log in again.'}), 401
+        response = make_response(jsonify({'error': 'Not authenticated. Please log in again.'}), 401)
+        response = add_no_cache_headers(response)
+        return response
     
     if 'user_password' not in session:
-        return jsonify({'error': 'Session expired. Please log in again.'}), 401
+        response = make_response(jsonify({'error': 'Session expired. Please log in again.'}), 401)
+        response = add_no_cache_headers(response)
+        return response
     
     user_id = session['user_id']
     
     try:
         encryption_key = get_encryption_key(user_id, session['user_password'])
     except Exception as e:
-        return jsonify({'error': f'Error generating encryption key: {str(e)}'}), 500
+        response = make_response(jsonify({'error': f'Error generating encryption key: {str(e)}'}), 500)
+        response = add_no_cache_headers(response)
+        return response
     
     try:
         result = []
@@ -734,7 +767,9 @@ def get_passwords():
         
         items = response.get('Items', [])
         if not items:
-            return jsonify({'passwords': []})
+            response_obj = make_response(jsonify({'passwords': []}))
+            response_obj = add_no_cache_headers(response_obj)
+            return response_obj
         
         decryption_errors = []
         for item in items:
@@ -765,23 +800,33 @@ def get_passwords():
         
         
         if items and not result:
-            return jsonify({
+            response = make_response(jsonify({
                 'error': 'Unable to decrypt passwords. This may happen if your login password was changed. Please contact support.',
                 'passwords': []
-            }), 500
+            }), 500)
+            response = add_no_cache_headers(response)
+            return response
         
-        return jsonify({'passwords': result})
+        response = make_response(jsonify({'passwords': result}))
+        response = add_no_cache_headers(response)
+        return response
     except ClientError as e:
-        return jsonify({'error': f'Database error: {str(e)}'}), 500
+        response = make_response(jsonify({'error': f'Database error: {str(e)}'}), 500)
+        response = add_no_cache_headers(response)
+        return response
     except Exception as e:
-        return jsonify({'error': f'Unexpected error: {str(e)}'}), 500
+        response = make_response(jsonify({'error': f'Unexpected error: {str(e)}'}), 500)
+        response = add_no_cache_headers(response)
+        return response
 
 
 @app.route('/api/passwords', methods=['POST'])
 def add_password():
     """Add a new password"""
     if 'user_id' not in session or 'user_password' not in session:
-        return jsonify({'error': 'Not authenticated'}), 401
+        response = make_response(jsonify({'error': 'Not authenticated'}), 401)
+        response = add_no_cache_headers(response)
+        return response
     
     data = request.get_json()
     website = data.get('website')
@@ -790,7 +835,9 @@ def add_password():
     notes = data.get('notes')
     
     if not website or not password:
-        return jsonify({'error': 'Website and password are required'}), 400
+        response = make_response(jsonify({'error': 'Website and password are required'}), 400)
+        response = add_no_cache_headers(response)
+        return response
     
     user_id = session['user_id']
     encryption_key = get_encryption_key(user_id, session['user_password'])
@@ -809,18 +856,26 @@ def add_password():
             'created_at': datetime.utcnow().isoformat()
         })
         
-        return jsonify({'message': 'Password added successfully', 'id': password_id}), 201
+        response = make_response(jsonify({'message': 'Password added successfully', 'id': password_id}), 201)
+        response = add_no_cache_headers(response)
+        return response
     except ClientError as e:
-        return jsonify({'error': str(e)}), 500
+        response = make_response(jsonify({'error': str(e)}), 500)
+        response = add_no_cache_headers(response)
+        return response
     except Exception as e:
-        return jsonify({'error': f'Unexpected error: {str(e)}'}), 500
+        response = make_response(jsonify({'error': f'Unexpected error: {str(e)}'}), 500)
+        response = add_no_cache_headers(response)
+        return response
 
 
 @app.route('/api/passwords/<password_id>', methods=['DELETE'])
 def delete_password(password_id):
     """Delete a password"""
     if 'user_id' not in session:
-        return jsonify({'error': 'Not authenticated'}), 401
+        response = make_response(jsonify({'error': 'Not authenticated'}), 401)
+        response = add_no_cache_headers(response)
+        return response
     
     user_id = session['user_id']
     
@@ -831,16 +886,22 @@ def delete_password(password_id):
                 'password_id': password_id
             }
         )
-        return jsonify({'message': 'Password deleted successfully'})
+        response = make_response(jsonify({'message': 'Password deleted successfully'}))
+        response = add_no_cache_headers(response)
+        return response
     except ClientError as e:
-        return jsonify({'error': str(e)}), 500
+        response = make_response(jsonify({'error': str(e)}), 500)
+        response = add_no_cache_headers(response)
+        return response
 
 
 @app.route('/api/passwords/<password_id>', methods=['PUT'])
 def update_password(password_id):
     """Update a password"""
     if 'user_id' not in session or 'user_password' not in session:
-        return jsonify({'error': 'Not authenticated'}), 401
+        response = make_response(jsonify({'error': 'Not authenticated'}), 401)
+        response = add_no_cache_headers(response)
+        return response
     
     data = request.get_json()
     user_id = session['user_id']
@@ -871,7 +932,9 @@ def update_password(password_id):
         expression_attribute_values[':updated_at'] = datetime.utcnow().isoformat()
         
         if not update_parts:
-            return jsonify({'error': 'No fields to update'}), 400
+            response = make_response(jsonify({'error': 'No fields to update'}), 400)
+            response = add_no_cache_headers(response)
+            return response
         
         update_expression = 'SET ' + ', '.join(update_parts)
         
@@ -884,9 +947,13 @@ def update_password(password_id):
             ExpressionAttributeValues=expression_attribute_values
         )
         
-        return jsonify({'message': 'Password updated successfully'})
+        response = make_response(jsonify({'message': 'Password updated successfully'}))
+        response = add_no_cache_headers(response)
+        return response
     except ClientError as e:
-        return jsonify({'error': str(e)}), 500
+        response = make_response(jsonify({'error': str(e)}), 500)
+        response = add_no_cache_headers(response)
+        return response
 
 
 @app.route('/health')

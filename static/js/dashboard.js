@@ -1,8 +1,34 @@
 // Dashboard JavaScript
 let passwords = [];
 
+// Prevent browser back-button access after logout
+window.addEventListener('pageshow', function(event) {
+    // Check if page was loaded from cache (back/forward button)
+    if (event.persisted) {
+        // Page was loaded from cache, reload to check authentication
+        window.location.reload();
+    }
+});
+
+// Prevent back-button navigation to cached dashboard
+window.addEventListener('popstate', function(event) {
+    // When user presses back button, redirect to login
+    window.location.href = '/login';
+});
+
+// Clear browser history to prevent back-button access
+if (window.history && window.history.pushState) {
+    window.history.pushState(null, null, window.location.href);
+    window.onpopstate = function() {
+        window.history.pushState(null, null, window.location.href);
+        window.location.href = '/login';
+    };
+}
+
 // Load passwords when page loads
 document.addEventListener('DOMContentLoaded', function() {
+    // Verify authentication before loading
+    checkAuthentication();
     loadPasswords();
     
     // Modal event listeners
@@ -20,6 +46,20 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 });
+
+// Check authentication status
+async function checkAuthentication() {
+    try {
+        const response = await fetch('/api/passwords');
+        if (response.status === 401) {
+            // Not authenticated, redirect to login
+            window.location.href = '/login';
+        }
+    } catch (error) {
+        // Error checking authentication, redirect to login
+        window.location.href = '/login';
+    }
+}
 
 // Load Passwords
 async function loadPasswords() {
