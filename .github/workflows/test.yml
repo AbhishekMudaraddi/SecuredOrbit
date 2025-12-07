@@ -94,8 +94,9 @@ jobs:
       run: |
         docker run --rm \
           --network="host" \
-          -v $(pwd):/zap/wrk/:rw \
+          -v "$(pwd):/zap/wrk/:rw" \
           -w /zap/wrk \
+          --user root \
           ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
           -t http://localhost:5000 \
           -r zap-report.html \
