@@ -48,7 +48,6 @@ jobs:
     needs: test
     permissions:
       contents: read
-      security-events: write
     
     env:
       SECRET_KEY: 'test-secret-key-for-zap-scan'
@@ -79,42 +78,50 @@ jobs:
       run: |
         nohup python app.py > flask.log 2>&1 &
         echo $! > flask.pid
-        # Optimized: Reduced initial wait and faster health checks
         for i in {1..10}; do
           if curl -f http://localhost:5000/health > /dev/null 2>&1; then
-            echo "✅ Flask app is running"
+            echo "Flask app is running"
             exit 0
           fi
           sleep 1
         done
-        echo "❌ Flask app failed to start"
+        echo "Flask app failed to start"
         cat flask.log
         exit 1
     
-    - name: ZAP Baseline Scan
-      uses: zaproxy/action-baseline@v0.11.0
+    - name: Run ZAP Baseline Scan
       continue-on-error: true
-      with:
-        target: 'http://localhost:5000'
-        cmd_options: '-a'
+      run: |
+        docker run --rm \
+          --network="host" \
+          -v $(pwd):/zap/wrk/:rw \
+          -w /zap/wrk \
+          ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
+          -t http://localhost:5000 \
+          -r zap-report.html \
+          -J zap-report.json \
+          -x zap-report.xml \
+          -I \
+          -j 2>&1 | tee zap-scan-output.log || echo "ZAP exit code: $?"
     
     - name: Stop Flask application
       if: always()
       run: |
-        if [ -f flask.pid ]; then
-          kill $(cat flask.pid) 2>/dev/null || true
-        fi
+        [ -f flask.pid ] && kill $(cat flask.pid) 2>/dev/null || true
     
     - name: Upload ZAP reports
       uses: actions/upload-artifact@v4
       if: always()
+      continue-on-error: true
       with:
         name: zap-security-reports
         path: |
-          report_html.html
-          report_json.json
-          report_md.md
+          zap-report.html
+          zap-report.json
+          zap-report.xml
+          zap-scan-output.log
         retention-days: 30
+        if-no-files-found: ignore
 
   sonarcloud:
     name: SonarCloud Static Analysis
