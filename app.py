@@ -54,16 +54,11 @@ csrf = CSRFProtect(app)
 
 @app.before_request
 def force_https():
-    """Force HTTPS redirect in production"""
-    # Skip HTTPS enforcement in development (allow HTTP for local testing)
     if os.getenv('FLASK_ENV') != 'production':
         return None
     
-    # In Elastic Beanstalk/Load Balancer setup, check X-Forwarded-Proto header
-    # This header is set by the load balancer and tells us the original protocol
     forwarded_proto = request.headers.get('X-Forwarded-Proto', '')
     
-    # If request came through as HTTP, redirect to HTTPS
     if forwarded_proto == 'http':
         url = request.url.replace('http://', 'https://', 1)
         return redirect(url, code=301)
@@ -72,7 +67,6 @@ def force_https():
 
 
 def add_no_cache_headers(response):
-    """Add headers to prevent browser caching of sensitive pages"""
     response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '0'
@@ -81,14 +75,11 @@ def add_no_cache_headers(response):
 
 @app.after_request
 def set_security_headers(response):
-    """Add security headers to all responses"""
-    # Anti-clickjacking protection
+
     response.headers['X-Frame-Options'] = 'DENY'
-    
-    # Prevent MIME type sniffing
+
+
     response.headers['X-Content-Type-Options'] = 'nosniff'
-    
-    # Content Security Policy - allows same-origin and inline scripts/styles needed for Flask-WTF
     response.headers['Content-Security-Policy'] = (
         "default-src 'self'; "
         "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
@@ -99,7 +90,6 @@ def set_security_headers(response):
         "frame-ancestors 'none';"
     )
     
-    # Permissions Policy (formerly Feature-Policy)
     response.headers['Permissions-Policy'] = (
         "geolocation=(), "
         "microphone=(), "
@@ -108,22 +98,16 @@ def set_security_headers(response):
         "usb=()"
     )
     
-    # Strict Transport Security (HSTS) - only in production/HTTPS
     if os.getenv('FLASK_ENV') == 'production':
-        # Force HTTPS for 1 year, including subdomains
         response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains; preload'
     
-    # Referrer Policy
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     
-    # Remove server version information
-    # Note: Flask's development server will still show Werkzeug, but this helps
     response.headers.pop('Server', None)
     
     return response
 
 
-# AWS Config
 AWS_REGION = os.getenv('AWS_REGION', 'us-east-1')
 AWS_ENDPOINT = os.getenv('AWS_ENDPOINT', None)
 DYNAMODB_USERS_TABLE = os.getenv('DYNAMODB_USERS_TABLE', 'PasswordManagerV2-Users')
@@ -145,13 +129,11 @@ passwords_table = dynamodb.Table(DYNAMODB_PASSWORDS_TABLE)
 
 
 def is_ci_cd_mode():
-    """Check if running in CI/CD environment with test credentials"""
     aws_key = os.getenv('AWS_ACCESS_KEY_ID', '')
     return aws_key in ('test-access-key', '') or os.getenv('CI') == 'true' or os.getenv('GITHUB_ACTIONS') == 'true'
 
 
 def init_dynamodb_tables():
-    """Initialize DynamoDB tables if they don't exist"""
     tables = [
         {
             'TableName': DYNAMODB_USERS_TABLE,
@@ -192,53 +174,46 @@ def init_dynamodb_tables():
     for table_def in tables:
         try:
             dynamodb_client.create_table(**table_def)
-            print(f"✅ Created table: {table_def['TableName']}")
+            print(f"Created table: {table_def['TableName']}")
         except ClientError as e:
             error_code = e.response['Error']['Code']
             if error_code == 'ResourceInUseException':
-                print(f"ℹ️  Table {table_def['TableName']} already exists")
+                print(f" Table {table_def['TableName']} already exists")
             elif error_code == 'UnrecognizedClientException' and is_ci_cd_mode():
-                # Suppress credential errors in CI/CD - expected when using test credentials
                 if not hasattr(init_dynamodb_tables, '_ci_warned'):
-                    print(f"ℹ️  Skipping DynamoDB table creation in CI/CD mode (test credentials - expected for security scanning)")
+                    print(f" Skipping DynamoDB table creation in CI/CD mode (test credentials - expected for security scanning)")
                     init_dynamodb_tables._ci_warned = True
             else:
                 if is_ci_cd_mode():
-                    print(f"⚠️  Database unavailable in CI/CD mode (expected for security scanning)")
+                    print(f" Database unavailable in CI/CD mode (expected for security scanning)")
                 else:
-                    print(f"⚠️  Error creating table {table_def['TableName']}: {e}")
+                    print(f" Error creating table {table_def['TableName']}: {e}")
 
 
 def hash_password(password):
-    """Hash password using bcrypt"""
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 
 def check_password(hashed_password, password):
-    """Check password against hash"""
     return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
 
 
 def get_encryption_key(user_id, password):
-    """Generate encryption key from user_id and password"""
     key_material = f"{user_id}:{password}".encode('utf-8')
     key = base64.urlsafe_b64encode(hashlib.sha256(key_material).digest())
     return key
 
 
 def encrypt_password(password_text, encryption_key):
-    """Encrypt password using Fernet"""
     f = Fernet(encryption_key)
     return f.encrypt(password_text.encode('utf-8')).decode('utf-8')
 
 
 def decrypt_password(encrypted_password, encryption_key):
-    """Decrypt password using Fernet"""
     try:
         f = Fernet(encryption_key)
         return f.decrypt(encrypted_password.encode('utf-8')).decode('utf-8')
     except Exception as e:
-        # Provide more helpful error message
         error_msg = str(e)
         if 'did not match' in error_msg or 'InvalidToken' in error_msg:
             raise ValueError("Unable to decrypt password. This may happen if your login password was changed or encryption key is invalid.")
@@ -246,17 +221,17 @@ def decrypt_password(encrypted_password, encryption_key):
 
 
 def generate_id():
-    """Generate a unique ID"""
+    # """Generate a unique ID"""
     return str(uuid4())
 
 
 def generate_totp_secret():
-    """Generate a TOTP secret"""
+    # """Generate a TOTP secret"""
     return pyotp.random_base32()
 
 
 def get_totp_uri(username, secret, issuer_name='Password Manager V2'):
-    """Generate TOTP provisioning URI for QR code"""
+    # """Generate TOTP provisioning URI for QR code"""
     totp = pyotp.TOTP(secret)
     return totp.provisioning_uri(
         name=username,
@@ -265,7 +240,7 @@ def get_totp_uri(username, secret, issuer_name='Password Manager V2'):
 
 
 def generate_qr_code(uri):
-    """Generate QR code as base64 string"""
+    # """Generate QR code as base64 string"""
     qr = qrcode.QRCode(version=1, box_size=10, border=5)
     qr.add_data(uri)
     qr.make(fit=True)
@@ -278,13 +253,13 @@ def generate_qr_code(uri):
 
 
 def verify_totp(secret, token):
-    """Verify TOTP token"""
+    # """Verify TOTP token"""
     totp = pyotp.TOTP(secret)
     return totp.verify(token, valid_window=2)
 
 
 def is_valid_email(email):
-    """Validate email format"""
+    # """Validate email format"""
     if not email:
         return False
     email_regex = r'^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'
@@ -292,7 +267,7 @@ def is_valid_email(email):
 
 
 def email_exists(email_lower):
-    """Check if email is already registered"""
+    # """Check if email is already registered"""
     if not email_lower:
         return False
     try:
@@ -314,7 +289,6 @@ def email_exists(email_lower):
 # Routes
 @app.route('/')
 def index():
-    """Landing page"""
     if 'user_id' in session:
         return redirect(url_for('dashboard'))
     return render_template('index.html')
@@ -322,41 +296,34 @@ def index():
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
-    """User registration"""
     if request.method == 'POST':
         username = request.form.get('username')
         email = request.form.get('email', '').strip()
         password = request.form.get('password')
         confirm_password = request.form.get('confirm_password')
         
-        # Validate 
         if not username or not email or not password or not confirm_password:
             return render_template('register.html', error='Please fill in all fields', username=username, email=email)
        
         if not is_valid_email(email):
             return render_template('register.html', error='Please enter a valid email address', username=username, email=email)
         
-        # Check password 
         if password != confirm_password:
             return render_template('register.html', error='Passwords do not match', username=username, email=email)
         
-        # Validate 
         if len(password) < 6:
             return render_template('register.html', error='Password must be at least 6 characters', username=username, email=email)
         
         try:
             email_lower = email.lower()
             
-            #  mail exist or no 
             if email_exists(email_lower):
                 return render_template('register.html', error='Email is already registered', username=username, email=email)
             
-            #  usernme exist or no 
             response = users_table.get_item(Key={'username': username})
             if 'Item' in response:
                 return render_template('register.html', error='Username already exists', username=username, email=email)
             
-            # Generate TOTP 
             totp_secret = generate_totp_secret()
             
             session['reg_username'] = username
@@ -365,7 +332,6 @@ def register():
             session['reg_password'] = password
             session['reg_totp_secret'] = totp_secret
             
-            # Redirect to TOTP 
             return redirect(url_for('setup_totp'))
         except ClientError as e:
             return render_template('register.html', error=f'Database error: {str(e)}')
@@ -375,7 +341,6 @@ def register():
 
 @app.route('/setup-totp', methods=['GET', 'POST'])
 def setup_totp():
-    """TOTP setup page - step 2: Setup Google Authenticator"""
     if 'reg_username' not in session or 'reg_totp_secret' not in session:
         return redirect(url_for('register'))
     
@@ -398,10 +363,8 @@ def setup_totp():
                                  totp_secret=totp_secret,
                                  error='Invalid TOTP code. Please try again.')
         
-        # TOTP verified, proceed to complete registration
         return redirect(url_for('complete_registration'))
     
-    # Generate QR code
     totp_uri = get_totp_uri(username, totp_secret)
     qr_code = generate_qr_code(totp_uri)
     
@@ -413,7 +376,6 @@ def setup_totp():
 
 @app.route('/complete-registration', methods=['GET'])
 def complete_registration():
-    """Complete registration - step 3: Save user to database"""
     if 'reg_username' not in session or 'reg_password' not in session or 'reg_email' not in session:
         return redirect(url_for('register'))
     
@@ -424,7 +386,6 @@ def complete_registration():
     totp_secret = session.get('reg_totp_secret')
     
     try:
-        # Create new user
         user_id = generate_id()
         users_table.put_item(Item={
             'username': username,
@@ -437,14 +398,12 @@ def complete_registration():
             'created_at': datetime.utcnow().isoformat()
         })
         
-        # Clear registration session
         session.pop('reg_username', None)
         session.pop('reg_password', None)
         session.pop('reg_email', None)
         session.pop('reg_email_lower', None)
         session.pop('reg_totp_secret', None)
         
-        # Set user details
         session['user_id'] = user_id
         session['username'] = username
         session['user_password'] = password  # Store temporarily for encryption key
@@ -456,7 +415,6 @@ def complete_registration():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    """User login with TOTP verification"""
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
@@ -464,7 +422,6 @@ def login():
         stored_username = session.get('login_username')
         stored_password = session.get('pending_password')
         
-        # Use password stored in session during TOTP verification step
         if (not password or password.strip() == '') and stored_username and stored_password and stored_username == username:
             password = stored_password
         
@@ -481,39 +438,32 @@ def login():
             
             user = response['Item']
             
-            # Validate user has required fields
             if 'password_hash' not in user:
                 import traceback
                 print(f"ERROR: User {username} missing password_hash field", file=__import__('sys').stderr)
                 traceback.print_exc()
                 return render_template('login.html', error='Account data error. Please contact support.')
             
-            # Verify password
             if not check_password(user['password_hash'], password):
                 session.pop('login_username', None)
                 session.pop('pending_password', None)
                 return render_template('login.html', error='Invalid username or password')
             
-            # Check if TOTP is enabled
             if user.get('totp_enabled', False):
                 if not totp_token:
-                    # Store username and password in session for TOTP verification
                     session['login_username'] = username
                     session['pending_password'] = password
                     return render_template('login.html', 
                                          username=username, 
                                          totp_required=True)
                 
-                # When TOTP token is provided, use stored session credentials if available
                 if stored_username and stored_password:
                     if stored_username != username or not check_password(user['password_hash'], stored_password):
                         session.pop('login_username', None)
                         session.pop('pending_password', None)
                         return render_template('login.html', error='Session expired. Please login again.')
-                    # Use stored password
                     password = stored_password
                 
-                # Verify TOTP
                 totp_secret = user.get('totp_secret')
                 if not totp_secret or not verify_totp(totp_secret, totp_token):
                     return render_template('login.html', 
@@ -521,12 +471,9 @@ def login():
                                          totp_required=True,
                                          error='Invalid TOTP code. Please try again.')
             
-            # Login successful
-            # Clear temporary login session
             session.pop('login_username', None)
             session.pop('pending_password', None)
             
-            # Set session
             if 'user_id' not in user:
                 import traceback
                 print(f"ERROR: User {username} missing user_id field", file=__import__('sys').stderr)
@@ -543,12 +490,10 @@ def login():
             error_code = e.response.get('Error', {}).get('Code', '')
             error_message = str(e)
             
-            # Suppress verbose errors in CI/CD mode
             if not is_ci_cd_mode():
                 print(f"Database error during login: {error_message}", file=__import__('sys').stderr)
                 traceback.print_exc()
             
-            # Check for IAM/permission errors
             if 'AccessDeniedException' in error_code or 'AccessDenied' in error_message:
                 if not is_ci_cd_mode():
                     print("CRITICAL: IAM permissions issue detected!", file=__import__('sys').stderr)
@@ -570,7 +515,6 @@ def login():
 
 @app.route('/forgot-password', methods=['GET', 'POST'])
 def forgot_password():
-    """Step 1: User enters username/email for password reset"""
     if request.method == 'POST':
         username_or_email = request.form.get('username_or_email', '').strip()
         
@@ -578,14 +522,12 @@ def forgot_password():
             return render_template('forgot_password.html', error='Please enter your username or email')
         
         try:
-            # Try to find user by username first
             user = None
             response = users_table.get_item(Key={'username': username_or_email})
             
             if 'Item' in response:
                 user = response['Item']
             else:
-                # Try to find by email
                 email_lower = username_or_email.lower()
                 try:
                     email_response = users_table.query(
@@ -595,7 +537,6 @@ def forgot_password():
                     if email_response.get('Items'):
                         user = email_response['Items'][0]
                 except ClientError:
-                    # If index doesn't exist, scan the table
                     scan_response = users_table.scan(
                         FilterExpression=Attr('email_lower').eq(email_lower)
                     )
@@ -603,16 +544,13 @@ def forgot_password():
                         user = scan_response['Items'][0]
             
             if not user:
-                # Don't reveal if user exists or not (security)
                 return render_template('forgot_password.html', 
                                      message='If an account exists, you will be able to reset your password.')
             
-            # Check if TOTP is enabled
             if not user.get('totp_enabled', False):
                 return render_template('forgot_password.html', 
                                      error='Password reset requires TOTP to be enabled. Please contact support.')
             
-            # Store user info in session for next step
             session['reset_username'] = user['username']
             session['reset_user_id'] = user['user_id']
             
@@ -626,7 +564,6 @@ def forgot_password():
 
 @app.route('/reset-password-verify', methods=['GET', 'POST'])
 def reset_password_verify():
-    """Step 2: User verifies TOTP code"""
     if 'reset_username' not in session:
         return redirect(url_for('forgot_password'))
     
@@ -641,7 +578,6 @@ def reset_password_verify():
                                  error='Please enter the TOTP code')
         
         try:
-            # Get user to verify TOTP
             response = users_table.get_item(Key={'username': username})
             if 'Item' not in response:
                 session.pop('reset_username', None)
@@ -650,14 +586,12 @@ def reset_password_verify():
             
             user = response['Item']
             
-            # Verify TOTP
             totp_secret = user.get('totp_secret')
             if not totp_secret or not verify_totp(totp_secret, totp_token):
                 return render_template('reset_password_verify.html', 
                                      username=username,
                                      error='Invalid TOTP code. Please try again.')
             
-            # TOTP verified, allow password reset
             session['reset_verified'] = True
             return redirect(url_for('reset_password'))
             
@@ -671,7 +605,6 @@ def reset_password_verify():
 
 @app.route('/reset-password', methods=['GET', 'POST'])
 def reset_password():
-    """Step 3: User sets new password"""
     if 'reset_username' not in session or 'reset_verified' not in session:
         return redirect(url_for('forgot_password'))
     
@@ -698,7 +631,6 @@ def reset_password():
                                  error='Password must be at least 6 characters')
         
         try:
-            # Update password in database
             users_table.update_item(
                 Key={'username': username},
                 UpdateExpression='SET password_hash = :ph, updated_at = :upd',
@@ -708,7 +640,6 @@ def reset_password():
                 }
             )
             
-            # Clear reset session
             session.pop('reset_username', None)
             session.pop('reset_user_id', None)
             session.pop('reset_verified', None)
@@ -725,17 +656,13 @@ def reset_password():
 
 @app.route('/logout')
 def logout():
-    """Logout user - clears session and prevents back-button access"""
     # Clear all session data
     session.clear()
     
-    # Create response with redirect
     response = redirect(url_for('index'))
     
-    # Add no-cache headers to prevent browser caching
     response = add_no_cache_headers(response)
     
-    # Delete the session cookie explicitly
     response.set_cookie('session', '', expires=0, max_age=0)
     
     return response
@@ -743,15 +670,11 @@ def logout():
 
 @app.route('/dashboard')
 def dashboard():
-    """Dashboard page - requires authentication"""
-    # Check authentication
     if 'user_id' not in session or 'username' not in session:
         return redirect(url_for('login'))
     
-    # Create response
     response = make_response(render_template('dashboard.html', username=session.get('username')))
     
-    # Add no-cache headers to prevent browser caching
     response = add_no_cache_headers(response)
     
     return response
@@ -891,7 +814,6 @@ def add_password():
 
 @app.route('/api/passwords/<password_id>', methods=['DELETE'])
 def delete_password(password_id):
-    """Delete a password"""
     if 'user_id' not in session:
         response = make_response(jsonify({'error': 'Not authenticated'}), 401)
         response = add_no_cache_headers(response)
@@ -917,7 +839,6 @@ def delete_password(password_id):
 
 @app.route('/api/passwords/<password_id>', methods=['PUT'])
 def update_password(password_id):
-    """Update a password"""
     if 'user_id' not in session or 'user_password' not in session:
         response = make_response(jsonify({'error': 'Not authenticated'}), 401)
         response = add_no_cache_headers(response)
@@ -978,7 +899,6 @@ def update_password(password_id):
 
 @app.route('/health')
 def health():
-    """Health check endpoint"""
     return jsonify({'ok': True}), 200
 
 
